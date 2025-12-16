@@ -1,0 +1,21 @@
+This is a test RFP document for testing the upload functionality.
+
+PROJECT REQUIREMENTS:
+1. Develop a web application
+2. Use modern technologies
+3. Ensure security compliance
+4. Deliver within 3 months
+
+TECHNICAL SPECIFICATIONS:
+- Frontend: React.js
+- Backend: Node.js
+- Database: PostgreSQL
+- Hosting: AWS
+
+EVALUATION CRITERIA:
+- Technical expertise (40%)
+- Cost effectiveness (30%)
+- Timeline adherence (20%)
+- Team experience (10%)
+
+SUBMISSION DEADLINE: January 15, 2025
