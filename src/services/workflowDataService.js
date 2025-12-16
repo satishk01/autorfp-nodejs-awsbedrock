@@ -406,6 +406,36 @@ class WorkflowDataService {
     }
   }
 
+  async saveAnswer(workflowId, answerData) {
+    try {
+      const db = await this.dbManager.getWorkflowDatabase(workflowId);
+      
+      const result = await db.run(`
+        INSERT OR REPLACE INTO answers (
+          workflow_id, question_id, answer_text, confidence_score,
+          answer_type, completeness, sources
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [
+        answerData.workflow_id || workflowId,
+        answerData.question_id,
+        answerData.answer_text,
+        answerData.confidence_score,
+        answerData.answer_type || 'inferred',
+        answerData.completeness || 'partial',
+        answerData.sources || '[]'
+      ]);
+
+      // Clear cache
+      await this.cache.del(`workflow:${workflowId}:answers`);
+      
+      logger.debug('Answer saved', { workflowId, questionId: answerData.question_id });
+      return result;
+    } catch (error) {
+      logger.error('Error saving answer', { workflowId, questionId: answerData.question_id, error: error.message });
+      throw error;
+    }
+  }
+
   async getAnswers(workflowId) {
     try {
       const cacheKey = `workflow:${workflowId}:answers`;
@@ -646,6 +676,125 @@ class WorkflowDataService {
   }
 
   // Close all connections
+  // Custom questions operations
+  async addCustomQuestion(workflowId, questionData) {
+    try {
+      const db = await this.dbManager.getWorkflowDatabase(workflowId);
+      
+      const result = await db.run(`
+        INSERT INTO questions (
+          workflow_id, question_id, category, question_text, rationale,
+          priority, impact, related_requirements, is_custom, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        workflowId,
+        questionData.question_id,
+        questionData.category,
+        questionData.question_text,
+        questionData.rationale,
+        questionData.priority,
+        questionData.impact,
+        questionData.related_requirements,
+        questionData.is_custom,
+        questionData.created_by
+      ]);
+
+      // Clear cache
+      await this.cache.del(`workflow:${workflowId}:questions`);
+
+      // Get the inserted question
+      const question = await db.get('SELECT * FROM questions WHERE id = ?', [result.lastID]);
+      
+      logger.info('Custom question added', { workflowId, questionId: questionData.question_id });
+      return question;
+    } catch (error) {
+      logger.error('Error adding custom question', { workflowId, error: error.message });
+      throw error;
+    }
+  }
+
+  async updateCustomQuestion(workflowId, questionId, updates) {
+    try {
+      const db = await this.dbManager.getWorkflowDatabase(workflowId);
+      
+      // First check if the question exists and is custom
+      const existingQuestion = await db.get(`
+        SELECT * FROM questions 
+        WHERE workflow_id = ? AND question_id = ? AND is_custom = 1
+      `, [workflowId, questionId]);
+
+      if (!existingQuestion) {
+        return null;
+      }
+
+      // Build update query dynamically
+      const fields = [];
+      const values = [];
+
+      Object.entries(updates).forEach(([key, value]) => {
+        if (value !== undefined) {
+          fields.push(`${key} = ?`);
+          values.push(value);
+        }
+      });
+
+      if (fields.length === 0) {
+        return existingQuestion;
+      }
+
+      values.push(workflowId, questionId);
+
+      const query = `
+        UPDATE questions 
+        SET ${fields.join(', ')} 
+        WHERE workflow_id = ? AND question_id = ? AND is_custom = 1
+      `;
+
+      await db.run(query, values);
+
+      // Clear cache
+      await this.cache.del(`workflow:${workflowId}:questions`);
+
+      logger.info('Custom question updated', { workflowId, questionId });
+      return true;
+    } catch (error) {
+      logger.error('Error updating custom question', { workflowId, questionId, error: error.message });
+      throw error;
+    }
+  }
+
+  async deleteCustomQuestion(workflowId, questionId) {
+    try {
+      const db = await this.dbManager.getWorkflowDatabase(workflowId);
+      
+      // Delete only if it's a custom question
+      const result = await db.run(`
+        DELETE FROM questions 
+        WHERE workflow_id = ? AND question_id = ? AND is_custom = 1
+      `, [workflowId, questionId]);
+
+      if (result.changes === 0) {
+        return null;
+      }
+
+      // Also delete any associated answers
+      await db.run(`
+        DELETE FROM answers 
+        WHERE workflow_id = ? AND question_id = ?
+      `, [workflowId, questionId]);
+
+      // Clear cache
+      await this.cache.del(`workflow:${workflowId}:questions`);
+      await this.cache.del(`workflow:${workflowId}:answers`);
+
+      logger.info('Custom question deleted', { workflowId, questionId });
+      return true;
+    } catch (error) {
+      logger.error('Error deleting custom question', { workflowId, questionId, error: error.message });
+      throw error;
+    }
+  }
+
   async close() {
     try {
       await this.dbManager.closeAllConnections();

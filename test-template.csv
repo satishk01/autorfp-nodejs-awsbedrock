@@ -1,0 +1,6 @@
+Category,Question Text,Rationale,Priority,Impact,Related Requirements
+technical,"What specific programming languages and frameworks are required for development?","Understanding the technical stack is crucial for accurate project estimation","high","Without clear technical requirements, the project may face compatibility issues","tech_001;tech_002"
+business,"What are the key performance indicators (KPIs) for project success?","Defining success metrics helps align project outcomes with business objectives","medium","Unclear success criteria may lead to project scope creep","bus_001"
+timeline,"Are there any dependencies on external systems or third-party integrations?","External dependencies can significantly impact project timeline","high","Unidentified dependencies may cause project delays","time_001"
+budget,"What is the expected budget range for this project?","Budget constraints help determine project scope and resource allocation","high","Budget misalignment may result in project cancellation","budget_001"
+compliance,"What regulatory or compliance requirements must be met?","Compliance requirements are mandatory and cannot be overlooked","high","Non-compliance may result in legal issues and project failure","comp_001"

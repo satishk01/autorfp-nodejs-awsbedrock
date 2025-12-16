@@ -73,7 +73,10 @@ CREATE TABLE IF NOT EXISTS questions (
     priority TEXT, -- 'high', 'medium', 'low'
     impact TEXT,
     related_requirements TEXT, -- JSON array of requirement IDs
+    is_custom BOOLEAN DEFAULT FALSE, -- TRUE for user-added questions, FALSE for AI-generated
+    created_by TEXT DEFAULT 'system', -- 'system' for AI-generated, 'user' for custom
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
 );
 

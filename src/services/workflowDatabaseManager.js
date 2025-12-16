@@ -76,10 +76,47 @@ class WorkflowDatabaseManager {
       }
       
       await db.exec(schema);
+      
+      // Run migrations for existing databases
+      await this.runMigrations(db);
+      
       logger.debug('Workflow database schema initialized');
     } catch (error) {
       logger.error('Failed to initialize workflow database schema:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Run database migrations for existing databases
+   */
+  async runMigrations(db) {
+    try {
+      // Check if questions table has the new columns
+      const tableInfo = await db.all("PRAGMA table_info(questions)");
+      const columnNames = tableInfo.map(col => col.name);
+      
+      // Add is_custom column if it doesn't exist
+      if (!columnNames.includes('is_custom')) {
+        await db.exec('ALTER TABLE questions ADD COLUMN is_custom BOOLEAN DEFAULT FALSE');
+        logger.info('Added is_custom column to questions table');
+      }
+      
+      // Add created_by column if it doesn't exist
+      if (!columnNames.includes('created_by')) {
+        await db.exec('ALTER TABLE questions ADD COLUMN created_by TEXT DEFAULT "system"');
+        logger.info('Added created_by column to questions table');
+      }
+      
+      // Add updated_at column if it doesn't exist
+      if (!columnNames.includes('updated_at')) {
+        await db.exec('ALTER TABLE questions ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP');
+        logger.info('Added updated_at column to questions table');
+      }
+      
+    } catch (error) {
+      logger.warn('Migration warning (non-critical):', error.message);
+      // Don't throw error for migration issues as they might be expected
     }
   }
 

@@ -97,6 +97,7 @@ class RFPServer {
 
     // Static files
     this.app.use('/uploads', express.static(config.upload.uploadDir));
+    this.app.use('/templates', express.static(path.join(process.cwd(), 'public', 'templates')));
     
     // Request logging
     this.app.use((req, res, next) => {
@@ -127,6 +128,22 @@ class RFPServer {
           error: error.message
         });
       }
+    });
+
+    // Excel upload endpoint with file handling
+    this.app.post('/api/rfp/workflow/:workflowId/upload-questions', this.upload.single('questionsFile'), async (req, res, next) => {
+      // Validate file type for Excel uploads
+      if (req.file) {
+        const allowedExcelTypes = ['.xlsx', '.xls', '.csv'];
+        const fileExt = path.extname(req.file.originalname).toLowerCase();
+        
+        if (!allowedExcelTypes.includes(fileExt)) {
+          return res.status(400).json({
+            error: `Invalid file type. Please upload an Excel file (.xlsx, .xls) or CSV file (.csv)`
+          });
+        }
+      }
+      next();
     });
 
     // API routes
