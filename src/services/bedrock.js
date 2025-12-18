@@ -11,11 +11,15 @@ class BedrockService {
         secretAccessKey: config.aws.secretAccessKey
       }
     });
-    this.modelId = config.aws.bedrockModelId;
+    this.defaultModelId = config.aws.bedrockModelId;
+    this.mindmapModelId = config.aws.bedrockMindmapModelId;
   }
 
-  async invokeModel(prompt, maxTokens = 4000, temperature = 0.1) {
+  async invokeModel(prompt, maxTokens = 4000, temperature = 0.1, modelId = null) {
     try {
+      // Use specified model or default to the standard model
+      const selectedModelId = modelId || this.defaultModelId;
+      
       const body = JSON.stringify({
         anthropic_version: "bedrock-2023-05-31",
         max_tokens: maxTokens,
@@ -29,7 +33,7 @@ class BedrockService {
       });
 
       const command = new InvokeModelCommand({
-        modelId: this.modelId,
+        modelId: selectedModelId,
         body: body,
         contentType: 'application/json',
         accept: 'application/json'
@@ -47,7 +51,7 @@ class BedrockService {
       const responseBody = JSON.parse(new TextDecoder().decode(response.body));
       
       logger.info('Bedrock model invoked successfully', {
-        modelId: this.modelId,
+        modelId: selectedModelId,
         inputTokens: responseBody.usage?.input_tokens,
         outputTokens: responseBody.usage?.output_tokens
       });
@@ -59,8 +63,11 @@ class BedrockService {
     }
   }
 
-  async streamModel(prompt, onChunk, maxTokens = 4000, temperature = 0.1) {
+  async streamModel(prompt, onChunk, maxTokens = 4000, temperature = 0.1, modelId = null) {
     try {
+      // Use specified model or default to the standard model
+      const selectedModelId = modelId || this.defaultModelId;
+      
       const body = JSON.stringify({
         anthropic_version: "bedrock-2023-05-31",
         max_tokens: maxTokens,
@@ -74,7 +81,7 @@ class BedrockService {
       });
 
       const command = new InvokeModelCommand({
-        modelId: this.modelId,
+        modelId: selectedModelId,
         body: body,
         contentType: 'application/json',
         accept: 'application/json'
@@ -99,6 +106,28 @@ class BedrockService {
       logger.error('Error streaming Bedrock model:', error);
       throw new Error(`Bedrock streaming failed: ${error.message}`);
     }
+  }
+
+  /**
+   * Invoke the high-performance model specifically for mindmap generation
+   */
+  async invokeMindmapModel(prompt, maxTokens = 8000, temperature = 0.1) {
+    logger.info('Using high-performance model for mindmap generation', { 
+      modelId: this.mindmapModelId,
+      maxTokens,
+      temperature
+    });
+    return this.invokeModel(prompt, maxTokens, temperature, this.mindmapModelId);
+  }
+
+  /**
+   * Get the model IDs for reference
+   */
+  getModelIds() {
+    return {
+      default: this.defaultModelId,
+      mindmap: this.mindmapModelId
+    };
   }
 }
 

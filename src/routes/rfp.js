@@ -38,16 +38,37 @@ router.get('/workflow/:workflowId', async (req, res) => {
   try {
     const { workflowId } = req.params;
     
-    // Get workflow status (now handles both memory and database)
-    const workflow = await agentOrchestrator.getWorkflowStatus(workflowId);
+    logger.info(`Fetching workflow details for: ${workflowId}`);
     
-    // Only return 404 if the workflow truly doesn't exist (no workflowId)
-    // A workflow with an error message is still a valid workflow, just failed
-    if (!workflow.workflowId) {
-      return res.status(404).json({
-        error: 'Workflow not found',
-        workflowId
-      });
+    // Try to get workflow from memory first
+    let workflow = await agentOrchestrator.getWorkflowStatus(workflowId);
+    
+    // If not in memory or doesn't have workflowId, try database
+    if (!workflow || !workflow.workflowId) {
+      logger.info(`Workflow not in memory, checking database for: ${workflowId}`);
+      
+      // Try to get from database
+      const dbWorkflow = await dataService.getWorkflow(workflowId);
+      if (dbWorkflow) {
+        // Convert database format to expected format
+        workflow = {
+          workflowId: dbWorkflow.id,
+          status: dbWorkflow.status || 'completed',
+          progress: dbWorkflow.progress || 100,
+          startTime: dbWorkflow.created_at,
+          endTime: dbWorkflow.updated_at,
+          results: dbWorkflow.results ? JSON.parse(dbWorkflow.results) : {},
+          error: dbWorkflow.error_message
+        };
+        logger.info(`Found workflow in database: ${workflowId}`);
+      } else {
+        logger.warn(`Workflow not found in memory or database: ${workflowId}`);
+        return res.status(404).json({
+          error: 'Workflow not found',
+          workflowId,
+          message: 'This workflow does not exist in memory or database'
+        });
+      }
     }
 
     // Get additional details from database
@@ -58,6 +79,8 @@ router.get('/workflow/:workflowId', async (req, res) => {
       dataService.getQuestions(workflowId),
       dataService.getAnswers(workflowId)
     ]);
+
+    logger.info(`Successfully retrieved workflow data for: ${workflowId}`);
 
     res.json({
       success: true,
@@ -72,7 +95,8 @@ router.get('/workflow/:workflowId', async (req, res) => {
     logger.error('Error fetching workflow status:', error);
     res.status(500).json({
       error: 'Failed to fetch workflow status',
-      details: error.message
+      details: error.message,
+      workflowId: req.params.workflowId
     });
   }
 });
@@ -1041,6 +1065,206 @@ router.get('/questions-template', (req, res) => {
     logger.error('Error downloading template:', error);
     res.status(500).json({
       error: 'Failed to download template',
+      details: error.message
+    });
+  }
+});
+
+// Generate mindmap for workflow
+router.post('/workflow/:workflowId/generate-mindmap', async (req, res) => {
+  try {
+    const { workflowId } = req.params;
+    const mindmapService = require('../services/mindmapService');
+    
+    logger.info(`Generating mindmap for workflow: ${workflowId}`);
+    
+    // Get comprehensive workflow data including processed content
+    const [documents, requirements, workflowResults] = await Promise.all([
+      dataService.getDocumentsByWorkflow(workflowId),
+      dataService.getRequirements(workflowId),
+      dataService.getWorkflowResults(workflowId)
+    ]);
+
+    if (!documents || documents.length === 0) {
+      return res.status(400).json({ 
+        error: 'No documents found for this workflow' 
+      });
+    }
+
+    // Generate mindmap with full workflow results for rich content analysis
+    const mindmap = await mindmapService.generateMindmap(workflowId, documents, requirements, workflowResults);
+
+    res.json({
+      success: true,
+      workflowId,
+      mindmap,
+      message: 'Mindmap generated successfully'
+    });
+
+  } catch (error) {
+    logger.error('Error generating mindmap:', error);
+    res.status(500).json({
+      error: 'Failed to generate mindmap',
+      details: error.message
+    });
+  }
+});
+
+// Get cached mindmap for workflow
+router.get('/workflow/:workflowId/mindmap', async (req, res) => {
+  try {
+    const { workflowId } = req.params;
+    const mindmapService = require('../services/mindmapService');
+    
+    logger.info(`Fetching mindmap for workflow: ${workflowId}`);
+    
+    // First check if workflow exists
+    const workflow = await dataService.getWorkflow(workflowId);
+    if (!workflow) {
+      logger.warn(`Workflow not found for mindmap: ${workflowId}`);
+      return res.status(404).json({
+        error: 'Workflow not found',
+        workflowId,
+        message: 'Cannot generate mindmap for non-existent workflow'
+      });
+    }
+    
+    // Try to get cached mindmap first
+    let mindmap = mindmapService.getCachedMindmap(workflowId);
+    
+    if (!mindmap) {
+      logger.info(`No cached mindmap found, generating new one for: ${workflowId}`);
+      
+      // Generate new mindmap if not cached - get comprehensive workflow data
+      const [documents, requirements, workflowResults] = await Promise.all([
+        dataService.getDocumentsByWorkflow(workflowId),
+        dataService.getRequirements(workflowId),
+        dataService.getWorkflowResults(workflowId)
+      ]);
+
+      if (documents && documents.length > 0) {
+        mindmap = await mindmapService.generateMindmap(workflowId, documents, requirements, workflowResults);
+        logger.info(`Mindmap generated successfully for: ${workflowId}`);
+      } else {
+        logger.warn(`No documents found for mindmap generation: ${workflowId}`);
+        return res.status(400).json({
+          error: 'No documents available for mindmap generation',
+          workflowId
+        });
+      }
+    } else {
+      logger.info(`Using cached mindmap for: ${workflowId}`);
+    }
+
+    if (!mindmap) {
+      return res.status(404).json({
+        error: 'No mindmap available for this workflow',
+        workflowId
+      });
+    }
+
+    res.json({
+      success: true,
+      workflowId,
+      mindmap
+    });
+
+  } catch (error) {
+    logger.error('Error fetching mindmap:', error);
+    res.status(500).json({
+      error: 'Failed to fetch mindmap',
+      details: error.message,
+      workflowId: req.params.workflowId
+    });
+  }
+});
+
+// Clear mindmap cache
+router.delete('/workflow/:workflowId/mindmap/cache', async (req, res) => {
+  try {
+    const { workflowId } = req.params;
+    const mindmapService = require('../services/mindmapService');
+    
+    logger.info(`Clearing mindmap cache for workflow: ${workflowId}`);
+    mindmapService.clearCache(workflowId);
+    
+    res.json({
+      success: true,
+      message: 'Mindmap cache cleared successfully',
+      workflowId
+    });
+  } catch (error) {
+    logger.error('Error clearing mindmap cache:', error);
+    res.status(500).json({
+      error: 'Failed to clear mindmap cache',
+      details: error.message
+    });
+  }
+});
+
+// Clear all mindmap caches (for debugging)
+router.delete('/mindmap/cache/all', async (req, res) => {
+  try {
+    const mindmapService = require('../services/mindmapService');
+    
+    logger.info('Clearing all mindmap caches');
+    mindmapService.cache.clear();
+    
+    res.json({
+      success: true,
+      message: 'All mindmap caches cleared successfully'
+    });
+  } catch (error) {
+    logger.error('Error clearing all mindmap caches:', error);
+    res.status(500).json({
+      error: 'Failed to clear all mindmap caches',
+      details: error.message
+    });
+  }
+});
+
+// Export mindmap in different formats
+router.get('/workflow/:workflowId/mindmap/export/:format', async (req, res) => {
+  try {
+    const { workflowId, format } = req.params;
+    const mindmapService = require('../services/mindmapService');
+    
+    const mindmap = mindmapService.getCachedMindmap(workflowId);
+    if (!mindmap) {
+      return res.status(404).json({
+        error: 'No mindmap available for export'
+      });
+    }
+
+    const exportedData = mindmapService.exportMindmap(mindmap, format);
+    
+    // Set appropriate content type and filename
+    let contentType, filename;
+    switch (format.toLowerCase()) {
+      case 'json':
+        contentType = 'application/json';
+        filename = `mindmap-${workflowId}.json`;
+        break;
+      case 'mermaid':
+        contentType = 'text/plain';
+        filename = `mindmap-${workflowId}.mmd`;
+        break;
+      case 'graphviz':
+        contentType = 'text/plain';
+        filename = `mindmap-${workflowId}.dot`;
+        break;
+      default:
+        return res.status(400).json({ error: 'Unsupported export format' });
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(exportedData);
+
+  } catch (error) {
+    logger.error('Error exporting mindmap:', error);
+    res.status(500).json({
+      error: 'Failed to export mindmap',
       details: error.message
     });
   }

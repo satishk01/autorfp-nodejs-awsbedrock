@@ -15,8 +15,10 @@ import {
   Save,
   X,
   Upload,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Share2
 } from 'lucide-react';
+import MindmapViewer from '../components/MindmapViewer';
 
 const Results = () => {
   const { workflowId } = useParams();
@@ -103,6 +105,7 @@ const Results = () => {
     { id: 'requirements', name: 'Requirements', icon: FileText },
     { id: 'questions', name: 'Questions', icon: AlertCircle },
     { id: 'answers', name: 'Answers', icon: CheckCircle },
+    { id: 'mindmap', name: 'Mindmap', icon: Share2 },
   ];
 
   if (isLoading) {
@@ -117,10 +120,33 @@ const Results = () => {
     return (
       <div className="text-center py-12">
         <AlertCircle className="mx-auto h-12 w-12 text-red-500" />
-        <h3 className="mt-2 text-sm font-medium text-gray-900">Results not available</h3>
+        <h3 className="mt-2 text-sm font-medium text-gray-900">
+          {results?.error === 'Workflow not found' ? 'Workflow Not Found' : 'Results not available'}
+        </h3>
         <p className="mt-1 text-sm text-gray-500">
-          The results for this workflow are not yet available or the workflow is still processing.
+          {results?.error === 'Workflow not found' 
+            ? `Workflow ${workflowId} does not exist. It may have been deleted or the ID is incorrect.`
+            : 'The results for this workflow are not yet available or the workflow is still processing.'
+          }
         </p>
+        {results?.error === 'Workflow not found' && (
+          <div className="mt-4">
+            <button
+              onClick={() => window.location.href = '/'}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        )}
+        {results?.error && results.error !== 'Workflow not found' && (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
+            <p className="text-sm text-red-700">Error: {results.error}</p>
+            {results.details && (
+              <p className="text-xs text-red-600 mt-1">{results.details}</p>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -934,6 +960,7 @@ const Results = () => {
           {activeTab === 'requirements' && <RequirementsTab />}
           {activeTab === 'questions' && <QuestionsTab />}
           {activeTab === 'answers' && <AnswersTab />}
+          {activeTab === 'mindmap' && <MindmapViewer workflowId={workflowId} />}
         </div>
       </div>
     </div>

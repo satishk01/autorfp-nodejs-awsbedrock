@@ -13,7 +13,8 @@ const config = {
     region: process.env.AWS_REGION || 'us-east-1',
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    bedrockModelId: process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-haiku-20240307-v1:0'
+    bedrockModelId: process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-haiku-20240307-v1:0',
+    bedrockMindmapModelId: process.env.BEDROCK_MINDMAP_MODEL_ID || 'us.anthropic.claude-3-5-sonnet-20241022-v2:0'
   },
   database: {
     url: process.env.DATABASE_URL || './data/rfp_system.db',
