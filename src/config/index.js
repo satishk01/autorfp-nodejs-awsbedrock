@@ -16,6 +16,10 @@ const config = {
     bedrockModelId: process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-haiku-20240307-v1:0',
     bedrockMindmapModelId: process.env.BEDROCK_MINDMAP_MODEL_ID || 'us.anthropic.claude-3-5-sonnet-20241022-v2:0'
   },
+  google: {
+    apiKey: process.env.GOOGLE_API_KEY,
+    geminiModelId: process.env.GEMINI_MODEL_ID || 'models/gemini-2.5-flash'
+  },
   database: {
     url: process.env.DATABASE_URL || './data/rfp_system.db',
     workflowSpecific: process.env.WORKFLOW_SPECIFIC_DB !== 'false' // Default to true
@@ -24,7 +28,7 @@ const config = {
     url: process.env.REDIS_URL || 'disabled' // Set to 'disabled' to use in-memory cache
   },
   upload: {
-    maxFileSize: process.env.MAX_FILE_SIZE || '50MB',
+    maxFileSize: process.env.MAX_FILE_SIZE || '100MB',
     uploadDir: process.env.UPLOAD_DIR || './uploads',
     allowedTypes: ['pdf', 'docx', 'txt', 'csv', 'xlsx', 'xls']
   },

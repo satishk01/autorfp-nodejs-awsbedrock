@@ -73,9 +73,32 @@ class DocumentProcessor {
 
   async processPDF(buffer) {
     try {
-      const data = await pdfParse(buffer);
-      return data.text;
+      // Check buffer size and handle large files differently
+      const bufferSizeMB = buffer.length / (1024 * 1024);
+      logger.info(`Processing PDF of size: ${bufferSizeMB.toFixed(2)}MB`);
+      
+      if (bufferSizeMB > 10) {
+        logger.warn(`Large PDF detected (${bufferSizeMB.toFixed(2)}MB). Using optimized processing.`);
+      }
+      
+      const data = await pdfParse(buffer, {
+        // Optimize for large files
+        max: bufferSizeMB > 10 ? 0 : undefined, // No page limit for large files
+        version: 'v1.10.100' // Use latest version for better performance
+      });
+      
+      const extractedText = data.text;
+      
+      // Log extraction statistics
+      logger.info(`PDF processing completed`, {
+        pages: data.numpages,
+        textLength: extractedText.length,
+        sizeMB: bufferSizeMB.toFixed(2)
+      });
+      
+      return extractedText;
     } catch (error) {
+      logger.error(`PDF processing failed for ${(buffer.length / (1024 * 1024)).toFixed(2)}MB file:`, error);
       throw new Error(`PDF processing failed: ${error.message}`);
     }
   }

@@ -233,12 +233,9 @@ Analyze the provided RFP questions and company documents, then return answers in
         input += `Overview: ${doc.overview}\n`;
       }
       
-      // Include relevant content sections
+      // Include relevant content sections with intelligent truncation
       if (doc.processedContent) {
-        // Truncate very long content
-        const content = doc.processedContent.length > 2000 ? 
-          doc.processedContent.substring(0, 2000) + "... [truncated]" : 
-          doc.processedContent;
+        const content = this.intelligentContentTruncation(doc.processedContent, questions);
         input += `Content:\n${content}\n`;
       }
       
@@ -496,6 +493,127 @@ Analyze the provided RFP questions and company documents, then return answers in
       count += questions.length;
     });
     return count;
+  }
+
+  /**
+   * Intelligent content truncation for large documents
+   * Prioritizes content based on question relevance and document structure
+   */
+  intelligentContentTruncation(content, questions, maxLength = 8000) {
+    if (content.length <= maxLength) {
+      return content;
+    }
+
+    logger.info(`Applying intelligent truncation to content of ${content.length} characters`);
+
+    // Extract question keywords for relevance scoring
+    const questionKeywords = questions.map(q => 
+      q.question_text || q.question || ''
+    ).join(' ').toLowerCase().split(/\s+/).filter(word => word.length > 3);
+
+    // Split content into sections
+    const sections = this.splitContentIntoSections(content);
+    
+    // Score sections based on relevance to questions
+    const scoredSections = sections.map(section => ({
+      content: section,
+      score: this.calculateSectionRelevance(section, questionKeywords),
+      length: section.length
+    }));
+
+    // Sort by relevance score (descending)
+    scoredSections.sort((a, b) => b.score - a.score);
+
+    // Select sections that fit within maxLength
+    let selectedContent = '';
+    let totalLength = 0;
+    const selectedSections = [];
+
+    for (const section of scoredSections) {
+      if (totalLength + section.length <= maxLength) {
+        selectedSections.push(section);
+        totalLength += section.length;
+      }
+    }
+
+    // Reconstruct content maintaining some original order
+    selectedContent = selectedSections
+      .sort((a, b) => content.indexOf(a.content) - content.indexOf(b.content))
+      .map(s => s.content)
+      .join('\n\n');
+
+    // If still too long, truncate intelligently
+    if (selectedContent.length > maxLength) {
+      const truncated = selectedContent.substring(0, maxLength - 100);
+      selectedContent = truncated + '\n\n... [Content truncated - showing most relevant sections]';
+    }
+
+    logger.info(`Content truncated from ${content.length} to ${selectedContent.length} characters`);
+    return selectedContent;
+  }
+
+  /**
+   * Split content into logical sections
+   */
+  splitContentIntoSections(content) {
+    // Split by common section indicators
+    const sectionPatterns = [
+      /\n\s*\d+\.\s+[A-Z][^\n]*\n/g,  // Numbered sections
+      /\n\s*[A-Z][A-Z\s]{10,}\n/g,    // ALL CAPS headers
+      /\n\s*[A-Z][^:\n]{5,}:\s*\n/g,  // Title: format
+      /\n\s*[-=]{5,}\s*\n/g           // Separator lines
+    ];
+
+    let sections = [content];
+    
+    for (const pattern of sectionPatterns) {
+      const newSections = [];
+      for (const section of sections) {
+        const parts = section.split(pattern);
+        newSections.push(...parts.filter(part => part.trim().length > 100));
+      }
+      if (newSections.length > sections.length) {
+        sections = newSections;
+        break; // Use the first pattern that creates meaningful splits
+      }
+    }
+
+    // If no good splits found, split by paragraphs
+    if (sections.length === 1) {
+      sections = content.split(/\n\s*\n/).filter(para => para.trim().length > 50);
+    }
+
+    return sections;
+  }
+
+  /**
+   * Calculate section relevance based on question keywords
+   */
+  calculateSectionRelevance(section, questionKeywords) {
+    const sectionLower = section.toLowerCase();
+    let score = 0;
+
+    // Count keyword matches
+    questionKeywords.forEach(keyword => {
+      const matches = (sectionLower.match(new RegExp(keyword, 'g')) || []).length;
+      score += matches;
+    });
+
+    // Boost score for sections with structured content
+    const structureBonus = [
+      /requirements?/i,
+      /specifications?/i,
+      /criteria/i,
+      /evaluation/i,
+      /timeline/i,
+      /deadline/i,
+      /budget/i,
+      /cost/i
+    ].reduce((bonus, pattern) => {
+      return bonus + (pattern.test(section) ? 2 : 0);
+    }, 0);
+
+    return score + structureBonus;
   }
 }
 

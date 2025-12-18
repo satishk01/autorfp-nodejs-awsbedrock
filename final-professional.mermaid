@@ -1,0 +1,41 @@
+﻿flowchart TB
+    %% AWS Architecture Diagram
+    
+    subgraph VPC["AWS VPC"]
+        subgraph AZ1["Availability Zone A"]
+            subgraph PublicSubnet1["Public Subnet"]
+                AmazonCloudFrontCDN["🌐 CloudFront CDN"]
+                CloudFront["🌐 CloudFront"]
+                AmazonAPIGateway["⚖️ API Gateway"]
+                APIGateway["⚖️ API Gateway"]
+            end
+            subgraph PrivateSubnet1["Private Subnet"]
+                AmazonLambdafunctions["⚡ Lambda functions"]
+                EC2["🖥️ EC2"]
+                Lambda["⚡ Lambda"]
+            end
+        end
+        subgraph DataLayer["Data Layer"]
+            AmazonRDSdatabase["🗄️ RDS database"]
+            AmazonElastiCacheforcaching["🗄️ ElastiCache for caching"]
+            RDS["🗄️ RDS"]
+            ElastiCache["🗄️ ElastiCache"]
+        end
+    end
+    
+    AmazonCloudFrontCDN -->|Data Flow| CloudFront
+    CloudFront -->|Data Flow| AmazonAPIGateway
+    AmazonAPIGateway -->|Data Flow| APIGateway
+    APIGateway -->|Data Flow| AmazonLambdafunctions
+    AmazonLambdafunctions -->|Data Flow| EC2
+    EC2 -->|Data Flow| Lambda
+    Lambda -->|Data Flow| AmazonRDSdatabase
+    AmazonRDSdatabase -->|Data Flow| AmazonElastiCacheforcaching
+    AmazonElastiCacheforcaching -->|Data Flow| RDS
+    RDS -->|Data Flow| ElastiCache
+    ElastiCache -->|Data Flow| AmazonEC
+    
+    classDef awsOrange fill:#FF9900,stroke:#E47911,stroke-width:2px,color:#232F3E
+    classDef awsBlue fill:#3F48CC,stroke:#2E3A8C,stroke-width:2px,color:#fff
+    classDef awsGreen fill:#569A31,stroke:#3F7B1C,stroke-width:2px,color:#fff
+

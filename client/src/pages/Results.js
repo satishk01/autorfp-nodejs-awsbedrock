@@ -16,9 +16,13 @@ import {
   X,
   Upload,
   FileSpreadsheet,
-  Share2
+  Share2,
+  Cloud,
+  Layers
 } from 'lucide-react';
 import MindmapViewer from '../components/MindmapViewer';
+import ArchitectureAnalysis from '../components/ArchitectureAnalysis';
+import ArchitectureDiagram from '../components/ArchitectureDiagram';
 
 const Results = () => {
   const { workflowId } = useParams();
@@ -106,6 +110,8 @@ const Results = () => {
     { id: 'questions', name: 'Questions', icon: AlertCircle },
     { id: 'answers', name: 'Answers', icon: CheckCircle },
     { id: 'mindmap', name: 'Mindmap', icon: Share2 },
+    { id: 'architecture', name: 'Architecture Analysis', icon: Cloud },
+    { id: 'diagram', name: 'Architecture Diagram', icon: Layers },
   ];
 
   if (isLoading) {
@@ -961,6 +967,8 @@ const Results = () => {
           {activeTab === 'questions' && <QuestionsTab />}
           {activeTab === 'answers' && <AnswersTab />}
           {activeTab === 'mindmap' && <MindmapViewer workflowId={workflowId} />}
+          {activeTab === 'architecture' && <ArchitectureAnalysis workflowId={workflowId} />}
+          {activeTab === 'diagram' && <ArchitectureDiagram workflowId={workflowId} />}
         </div>
       </div>
     </div>

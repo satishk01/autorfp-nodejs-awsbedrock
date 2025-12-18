@@ -1270,6 +1270,124 @@ router.get('/workflow/:workflowId/mindmap/export/:format', async (req, res) => {
   }
 });
 
+// Analyze architecture using AWS Documentation MCP and Bedrock Haiku 3
+router.post('/workflow/:workflowId/analyze-architecture', async (req, res) => {
+  try {
+    const { workflowId } = req.params;
+    const { architectureDescription } = req.body;
+
+    if (!architectureDescription || !architectureDescription.trim()) {
+      return res.status(400).json({
+        error: 'Architecture description is required'
+      });
+    }
+
+    logger.info(`Analyzing architecture for workflow: ${workflowId}`);
+
+    const architectureService = require('../services/architectureAnalysisService');
+    const result = await architectureService.analyzeArchitecture(architectureDescription, workflowId);
+
+    // Store the analysis for later use in diagram generation
+    const workflowDataService = require('../services/workflowDataService');
+    await workflowDataService.storeArchitectureAnalysis(workflowId, result.analysis);
+
+    res.json({
+      success: true,
+      analysis: result.analysis,
+      awsServices: result.awsServices,
+      recommendations: result.recommendations
+    });
+
+  } catch (error) {
+    logger.error('Error analyzing architecture:', error);
+    res.status(500).json({
+      error: 'Failed to analyze architecture',
+      details: error.message
+    });
+  }
+});
+
+// Get stored architecture analysis
+router.get('/workflow/:workflowId/architecture-analysis', async (req, res) => {
+  try {
+    const { workflowId } = req.params;
+
+    logger.info(`Retrieving architecture analysis for workflow: ${workflowId}`);
+
+    const workflowDataService = require('../services/workflowDataService');
+    const analysis = await workflowDataService.getArchitectureAnalysis(workflowId);
+
+    if (analysis) {
+      res.json({
+        success: true,
+        analysis: analysis
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'No architecture analysis found for this workflow'
+      });
+    }
+
+  } catch (error) {
+    logger.error('Error retrieving architecture analysis:', error);
+    res.status(500).json({
+      error: 'Failed to retrieve architecture analysis',
+      details: error.message
+    });
+  }
+});
+
+// Generate architecture diagram using Gemini
+router.post('/workflow/:workflowId/generate-architecture-diagram', async (req, res) => {
+  try {
+    const { workflowId } = req.params;
+    const { architectureAnalysis } = req.body;
+
+    if (!architectureAnalysis || !architectureAnalysis.trim()) {
+      return res.status(400).json({
+        error: 'Architecture analysis is required'
+      });
+    }
+
+    logger.info(`Generating architecture diagram for workflow: ${workflowId}`);
+
+    const diagramService = require('../services/architectureDiagramService');
+    const diagram = await diagramService.generateDiagram(architectureAnalysis, workflowId);
+
+    res.json({
+      success: true,
+      diagram: diagram
+    });
+
+  } catch (error) {
+    logger.error('Error generating architecture diagram:', error);
+    res.status(500).json({
+      error: 'Failed to generate architecture diagram',
+      details: error.message
+    });
+  }
+});
+
+// Clear architecture diagram cache
+router.post('/clear-diagram-cache', async (req, res) => {
+  try {
+    const diagramService = require('../services/architectureDiagramService');
+    diagramService.clearCache();
+    
+    res.json({
+      success: true,
+      message: 'Architecture diagram cache cleared successfully'
+    });
+  } catch (error) {
+    logger.error('Error clearing diagram cache:', error);
+    res.status(500).json({
+      error: 'Failed to clear diagram cache',
+      details: error.message
+    });
+  }
+});
+
 // Generate answers for unanswered questions (including custom questions)
 router.post('/workflow/:workflowId/generate-missing-answers', async (req, res) => {
   try {

@@ -804,6 +804,65 @@ class WorkflowDataService {
       logger.error('Error closing workflow data service', { error: error.message });
     }
   }
+
+  // Architecture analysis storage methods
+  async storeArchitectureAnalysis(workflowId, analysis) {
+    try {
+      const db = await this.dbManager.getWorkflowDatabase(workflowId);
+      
+      // Create table if it doesn't exist
+      await db.run(`
+        CREATE TABLE IF NOT EXISTS architecture_analysis (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          analysis TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // Delete existing analysis and insert new one
+      await db.run('DELETE FROM architecture_analysis');
+      await db.run(
+        'INSERT INTO architecture_analysis (analysis) VALUES (?)',
+        [analysis]
+      );
+
+      // Clear cache
+      await this.cache.del(`workflow:${workflowId}:architecture`);
+
+      logger.info('Architecture analysis stored', { workflowId });
+      return { success: true };
+    } catch (error) {
+      logger.error('Error storing architecture analysis', { workflowId, error: error.message });
+      throw error;
+    }
+  }
+
+  async getArchitectureAnalysis(workflowId) {
+    try {
+      // Check cache first
+      const cacheKey = `workflow:${workflowId}:architecture`;
+      const cached = await this.cache.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      const db = await this.dbManager.getWorkflowDatabase(workflowId);
+      
+      const result = await db.get('SELECT analysis FROM architecture_analysis ORDER BY created_at DESC LIMIT 1');
+      
+      if (result) {
+        // Cache for 1 hour
+        await this.cache.set(cacheKey, result.analysis, 3600);
+        return result.analysis;
+      }
+
+      return null;
+    } catch (error) {
+      logger.error('Error retrieving architecture analysis', { workflowId, error: error.message });
+      return null;
+    }
+  }
 }
 
 // Create singleton instance

@@ -20,6 +20,19 @@ class BedrockService {
       // Use specified model or default to the standard model
       const selectedModelId = modelId || this.defaultModelId;
       
+      // Estimate token count (rough approximation: 1 token ≈ 4 characters)
+      const estimatedTokens = Math.ceil(prompt.length / 4);
+      
+      // Claude models have ~200K token limit, warn if approaching
+      if (estimatedTokens > 150000) {
+        logger.warn(`Large prompt detected: ~${estimatedTokens} tokens. Consider chunking.`);
+      }
+      
+      logger.info(`Invoking model with ~${estimatedTokens} input tokens`, { 
+        modelId: selectedModelId,
+        promptLength: prompt.length 
+      });
+      
       const body = JSON.stringify({
         anthropic_version: "bedrock-2023-05-31",
         max_tokens: maxTokens,
@@ -118,6 +131,53 @@ class BedrockService {
       temperature
     });
     return this.invokeModel(prompt, maxTokens, temperature, this.mindmapModelId);
+  }
+
+  /**
+   * Generate content using specified model and options
+   */
+  async generateContent(prompt, options = {}) {
+    const {
+      modelId = this.defaultModelId,
+      maxTokens = 4000,
+      temperature = 0.1
+    } = options;
+
+    try {
+      logger.info(`Generating content with model: ${modelId}`);
+      
+      const body = JSON.stringify({
+        anthropic_version: "bedrock-2023-05-31",
+        max_tokens: maxTokens,
+        temperature: temperature,
+        messages: [
+          {
+            role: "user",
+            content: prompt
+          }
+        ]
+      });
+
+      const command = new InvokeModelCommand({
+        modelId: modelId,
+        body: body,
+        contentType: 'application/json',
+        accept: 'application/json'
+      });
+
+      const response = await this.client.send(command);
+      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+      
+      logger.info('Content generation completed successfully', {
+        modelId,
+        responseLength: responseBody.content[0].text.length
+      });
+
+      return responseBody.content[0].text;
+    } catch (error) {
+      logger.error('Error generating content with Bedrock:', error);
+      throw new Error(`Bedrock content generation failed: ${error.message}`);
+    }
   }
 
   /**
