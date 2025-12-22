@@ -1,0 +1,107 @@
+# Java Fix Commands for Amazon Linux 2023
+# Copy and paste these commands one by one into your EC2 terminal
+
+# ============================================
+# STEP 1: Install Java (if not already done)
+# ============================================
+sudo dnf update -y
+sudo dnf install -y java-17-openjdk java-17-openjdk-devel
+
+# ============================================
+# STEP 2: Find Java Installation
+# ============================================
+# This will show where Java is installed
+ls -la /usr/lib/jvm/
+
+# ============================================
+# STEP 3: Set JAVA_HOME (use the path from step 2)
+# ============================================
+# Usually it's one of these:
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+# OR
+export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which javac 2>/dev/null || echo /usr/lib/jvm/java-17-openjdk/bin/javac))))
+
+# ============================================
+# STEP 4: Add Java to PATH
+# ============================================
+export PATH=$JAVA_HOME/bin:$PATH
+
+# ============================================
+# STEP 5: Test Java (should work now)
+# ============================================
+java -version
+
+# ============================================
+# STEP 6: Make it Permanent
+# ============================================
+# Add to bashrc
+echo 'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk' >> ~/.bashrc
+echo 'export PATH=$JAVA_HOME/bin:$PATH' >> ~/.bashrc
+
+# Add to system profile
+sudo bash -c 'cat >> /etc/profile.d/java.sh << EOF
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+export PATH=\$JAVA_HOME/bin:\$PATH
+EOF'
+
+# ============================================
+# STEP 7: Reload Configuration
+# ============================================
+source ~/.bashrc
+
+# ============================================
+# STEP 8: Final Test
+# ============================================
+java -version
+echo "JAVA_HOME: $JAVA_HOME"
+which java
+
+# ============================================
+# If still not working, try this:
+# ============================================
+# Find exact Java path
+find /usr/lib/jvm -name java -type f 2>/dev/null
+
+# Use the full path directly
+/usr/lib/jvm/java-17-openjdk/bin/java -version
+
+# Set JAVA_HOME to the correct path
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+export PATH=$JAVA_HOME/bin:$PATH
+
+# ============================================
+# ALTERNATIVE: Use alternatives system
+# ============================================
+sudo alternatives --config java
+# This will show available Java versions
+
+# Set default Java
+sudo alternatives --set java /usr/lib/jvm/java-17-openjdk/bin/java
+
+# ============================================
+# NUCLEAR OPTION: Complete reinstall
+# ============================================
+# Remove existing Java
+sudo dnf remove -y java-*-openjdk*
+
+# Clean up
+sudo rm -rf /usr/lib/jvm/*
+
+# Reinstall
+sudo dnf install -y java-17-openjdk java-17-openjdk-devel
+
+# Find installation
+JAVA_PATH=$(find /usr/lib/jvm -name "java-17-openjdk*" -type d | head -1)
+echo "Found Java at: $JAVA_PATH"
+
+# Set environment
+export JAVA_HOME=$JAVA_PATH
+export PATH=$JAVA_HOME/bin:$PATH
+
+# Make permanent
+echo "export JAVA_HOME=$JAVA_PATH" >> ~/.bashrc
+echo 'export PATH=$JAVA_HOME/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+
+# Test
+java -version

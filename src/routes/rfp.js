@@ -1338,11 +1338,41 @@ router.get('/workflow/:workflowId/architecture-analysis', async (req, res) => {
   }
 });
 
-// Generate architecture diagram using Gemini
+// Test endpoint to force professional diagram generation
+router.post('/test-professional-diagram', async (req, res) => {
+  try {
+    const { architectureAnalysis } = req.body;
+    
+    if (!architectureAnalysis) {
+      return res.status(400).json({ error: 'Architecture analysis required' });
+    }
+    
+    logger.info('Testing professional diagram service directly');
+    
+    const professionalDiagramService = require('../services/professionalArchitectureDiagramService');
+    const diagram = await professionalDiagramService.generateProfessionalDiagram(architectureAnalysis, 'test-professional');
+    
+    res.json({
+      success: true,
+      diagram: diagram,
+      type: 'professional',
+      message: 'Generated using professional service directly'
+    });
+    
+  } catch (error) {
+    logger.error('Error in professional diagram test:', error);
+    res.status(500).json({
+      error: 'Professional diagram test failed',
+      details: error.message
+    });
+  }
+});
+
+// Generate professional architecture diagram using enhanced service
 router.post('/workflow/:workflowId/generate-architecture-diagram', async (req, res) => {
   try {
     const { workflowId } = req.params;
-    const { architectureAnalysis } = req.body;
+    const { architectureAnalysis, useProfessional = true } = req.body;
 
     if (!architectureAnalysis || !architectureAnalysis.trim()) {
       return res.status(400).json({
@@ -1350,18 +1380,47 @@ router.post('/workflow/:workflowId/generate-architecture-diagram', async (req, r
       });
     }
 
-    logger.info(`Generating architecture diagram for workflow: ${workflowId}`);
+    logger.info(`Generating ${useProfessional ? 'professional' : 'standard'} architecture diagram for workflow: ${workflowId}`);
 
-    const diagramService = require('../services/architectureDiagramService');
-    const diagram = await diagramService.generateDiagram(architectureAnalysis, workflowId);
+    let diagram;
+    if (useProfessional) {
+      // Use the new professional architecture diagram service
+      const professionalDiagramService = require('../services/professionalArchitectureDiagramService');
+      diagram = await professionalDiagramService.generateProfessionalDiagram(architectureAnalysis, workflowId);
+    } else {
+      // Fallback to standard diagram service
+      const diagramService = require('../services/architectureDiagramService');
+      diagram = await diagramService.generateDiagram(architectureAnalysis, workflowId);
+    }
 
     res.json({
       success: true,
-      diagram: diagram
+      diagram: diagram,
+      type: useProfessional ? 'professional' : 'standard'
     });
 
   } catch (error) {
     logger.error('Error generating architecture diagram:', error);
+    
+    // If professional service fails, try fallback to standard service
+    if (req.body.useProfessional !== false) {
+      try {
+        logger.info('Professional diagram failed, falling back to standard service');
+        const diagramService = require('../services/architectureDiagramService');
+        const diagram = await diagramService.generateDiagram(req.body.architectureAnalysis, req.params.workflowId);
+        
+        return res.json({
+          success: true,
+          diagram: diagram,
+          type: 'standard',
+          fallback: true,
+          message: 'Professional diagram generation failed, using standard diagram'
+        });
+      } catch (fallbackError) {
+        logger.error('Fallback diagram generation also failed:', fallbackError);
+      }
+    }
+    
     res.status(500).json({
       error: 'Failed to generate architecture diagram',
       details: error.message
@@ -1369,15 +1428,23 @@ router.post('/workflow/:workflowId/generate-architecture-diagram', async (req, r
   }
 });
 
-// Clear architecture diagram cache
+// Clear architecture diagram cache for both services
 router.post('/clear-diagram-cache', async (req, res) => {
   try {
+    // Clear cache for both standard and professional diagram services
     const diagramService = require('../services/architectureDiagramService');
+    const professionalDiagramService = require('../services/professionalArchitectureDiagramService');
+    
     diagramService.clearCache();
+    
+    // Professional service uses the same cache structure
+    if (professionalDiagramService.diagramCache) {
+      professionalDiagramService.diagramCache.clear();
+    }
     
     res.json({
       success: true,
-      message: 'Architecture diagram cache cleared successfully'
+      message: 'Architecture diagram cache cleared successfully for both standard and professional services'
     });
   } catch (error) {
     logger.error('Error clearing diagram cache:', error);

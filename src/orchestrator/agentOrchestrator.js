@@ -76,6 +76,40 @@ class AgentOrchestrator {
       // Save document ingestion results
       await dataService.saveWorkflowResult(workflowId, 'document_ingestion', ingestedDocuments, 0.9, Date.now() - this.workflowState[workflowId].startTime);
 
+      // Step 1.5: GraphRAG Processing (ensure knowledge graph creation)
+      await this.updateProgress(workflowId, 'graphrag_processing', 15, 'Creating knowledge graph...');
+      try {
+        const graphRagService = require('../services/graphRagService');
+        await graphRagService.initialize();
+        
+        // Process each document for GraphRAG if it wasn't already processed
+        for (const doc of ingestedDocuments) {
+          if (doc.processedContent && doc.fileName) {
+            logger.info(`Ensuring GraphRAG processing for: ${doc.fileName}`);
+            
+            const documentData = {
+              filename: doc.fileName,
+              content: doc.processedContent,
+              metadata: doc.metadata || {}
+            };
+            
+            // Create chunks and embeddings
+            const documentProcessor = require('../services/documentProcessor');
+            const chunks = documentProcessor.createChunks(doc.processedContent);
+            const embeddings = await documentProcessor.generateEmbeddings(chunks);
+            
+            // Process with GraphRAG
+            await graphRagService.processDocument(workflowId, documentData, chunks, embeddings);
+            logger.info(`GraphRAG processing completed for: ${doc.fileName}`);
+          }
+        }
+        
+        logger.info(`GraphRAG processing completed for workflow: ${workflowId}`);
+      } catch (graphError) {
+        logger.warn(`GraphRAG processing failed for workflow ${workflowId}:`, graphError.message);
+        // Don't fail the entire workflow if GraphRAG fails
+      }
+
       // Step 2: Requirements Analysis
       await this.updateProgress(workflowId, 'requirements_analysis', 30, 'Analyzing requirements...');
       const requirementsAnalysis = await this.agents.requirementsAnalysis.analyzeRequirements(ingestedDocuments);

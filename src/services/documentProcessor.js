@@ -5,6 +5,7 @@ const mammoth = require('mammoth');
 const ExcelJS = require('exceljs');
 const logger = require('../utils/logger');
 const ragService = require('./ragService');
+const graphRagService = require('./graphRagService');
 
 class DocumentProcessor {
   constructor() {
@@ -221,14 +222,123 @@ class DocumentProcessor {
   async vectorizeDocument(documentId, content, metadata, workflowId = null) {
     try {
       logger.info(`Vectorizing document: ${documentId}`);
-      const success = await ragService.vectorizeDocument(documentId, content, metadata, workflowId);
-      if (success) {
-        logger.info(`Successfully vectorized document: ${documentId}`);
+      
+      // Process with existing RAG service (FAISS)
+      const ragSuccess = await ragService.vectorizeDocument(documentId, content, metadata, workflowId);
+      if (ragSuccess) {
+        logger.info(`Successfully vectorized document in RAG: ${documentId}`);
       } else {
-        logger.warn(`Failed to vectorize document: ${documentId}`);
+        logger.warn(`Failed to vectorize document in RAG: ${documentId}`);
+      }
+
+      // Process with GraphRAG service (Neo4j + FAISS hybrid)
+      if (workflowId) {
+        try {
+          // Initialize GraphRAG if not already done
+          await graphRagService.initialize();
+          
+          // Create document data structure for GraphRAG
+          const documentData = {
+            filename: metadata.fileName || documentId,
+            content: content,
+            metadata: metadata
+          };
+
+          // Create chunks for GraphRAG processing
+          const chunks = this.createChunks(content);
+          
+          // Generate embeddings for chunks (using existing RAG service embedding function)
+          const embeddings = await this.generateEmbeddings(chunks);
+          
+          // Process document with GraphRAG
+          const graphResult = await graphRagService.processDocument(workflowId, documentData, chunks, embeddings);
+          
+          if (graphResult.documentId) {
+            logger.info(`Successfully processed document in GraphRAG: ${documentId}`, {
+              documentId: graphResult.documentId,
+              entitiesExtracted: graphResult.entities.length
+            });
+          }
+        } catch (graphError) {
+          logger.warn(`GraphRAG processing failed for document ${documentId}:`, graphError.message);
+          // Don't fail the entire process if GraphRAG fails
+        }
       }
     } catch (error) {
       logger.error('Error vectorizing document', { documentId, error: error.message });
+    }
+  }
+
+  createChunks(content, chunkSize = 1000, overlap = 200) {
+    const chunks = [];
+    const words = content.split(/\s+/);
+    
+    for (let i = 0; i < words.length; i += chunkSize - overlap) {
+      const chunkWords = words.slice(i, i + chunkSize);
+      const chunkContent = chunkWords.join(' ');
+      
+      chunks.push({
+        content: chunkContent,
+        tokenCount: chunkWords.length,
+        startIndex: i,
+        endIndex: Math.min(i + chunkSize, words.length)
+      });
+      
+      // Break if we've reached the end
+      if (i + chunkSize >= words.length) break;
+    }
+    
+    return chunks;
+  }
+
+  async generateEmbeddings(chunks) {
+    try {
+      // Get the RAG service's embedding functionality
+      const ragService = require('./ragService');
+      
+      // If RAG service is using workflow-specific storage, get the embedder from there
+      if (ragService.activeService === 'workflow' && ragService.workflowDataService) {
+        const vectorManager = ragService.workflowDataService.vectorManager;
+        if (vectorManager && vectorManager.embedder) {
+          const embeddings = [];
+          for (const chunk of chunks) {
+            try {
+              const output = await vectorManager.embedder(chunk.content, { pooling: 'mean', normalize: true });
+              embeddings.push(Array.from(output.data));
+            } catch (error) {
+              logger.warn(`Failed to generate embedding for chunk: ${error.message}`);
+              // Fallback to dummy embedding
+              embeddings.push(Array(384).fill(0).map(() => Math.random()));
+            }
+          }
+          return embeddings;
+        }
+      }
+      
+      // Fallback: try to use the active service's embedder
+      if (ragService.activeService && ragService.activeService.embedder) {
+        const embeddings = [];
+        for (const chunk of chunks) {
+          try {
+            const output = await ragService.activeService.embedder(chunk.content, { pooling: 'mean', normalize: true });
+            embeddings.push(Array.from(output.data));
+          } catch (error) {
+            logger.warn(`Failed to generate embedding for chunk: ${error.message}`);
+            // Fallback to dummy embedding
+            embeddings.push(Array(384).fill(0).map(() => Math.random()));
+          }
+        }
+        return embeddings;
+      }
+      
+      // Final fallback: dummy embeddings
+      logger.warn('No embedder available, using dummy embeddings');
+      return chunks.map(() => Array(384).fill(0).map(() => Math.random()));
+      
+    } catch (error) {
+      logger.error('Error generating embeddings:', error);
+      // Fallback to dummy embeddings
+      return chunks.map(() => Array(384).fill(0).map(() => Math.random()));
     }
   }
 

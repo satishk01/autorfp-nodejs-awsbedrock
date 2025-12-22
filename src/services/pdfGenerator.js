@@ -34,8 +34,26 @@ class PDFGenerator {
         throw new Error('No workflow results provided for PDF generation');
       }
 
+      // Fetch additional data for comprehensive report
+      const workflowId = workflowResults.workflowId || projectContext?.workflowId;
+      let additionalData = {};
+      
+      if (workflowId) {
+        try {
+          // Fetch mindmap, knowledge graph, and architecture analysis
+          additionalData = await this.fetchAdditionalWorkflowData(workflowId);
+          logger.info('Additional workflow data fetched', {
+            hasMindmap: !!additionalData.mindmap,
+            hasKnowledgeGraph: !!additionalData.knowledgeGraph,
+            hasArchitectureAnalysis: !!additionalData.architectureAnalysis
+          });
+        } catch (error) {
+          logger.warn('Failed to fetch additional workflow data:', error.message);
+        }
+      }
+
       // Generate HTML content with error handling
-      const htmlContent = await this.generateHTMLContent(workflowResults, projectContext);
+      const htmlContent = await this.generateHTMLContent(workflowResults, projectContext, additionalData);
       
       if (!htmlContent || htmlContent.length < 100) {
         throw new Error('Generated HTML content is too short or empty');
@@ -99,7 +117,40 @@ class PDFGenerator {
     }
   }
 
-  async generateHTMLContent(workflowResults, projectContext) {
+  /**
+   * Fetch additional workflow data (mindmap, knowledge graph, architecture analysis)
+   */
+  async fetchAdditionalWorkflowData(workflowId) {
+    const additionalData = {};
+    
+    try {
+      // Fetch mindmap
+      const mindmapService = require('./mindmapService');
+      additionalData.mindmap = mindmapService.getCachedMindmap(workflowId);
+    } catch (error) {
+      logger.warn('Failed to fetch mindmap:', error.message);
+    }
+    
+    try {
+      // Fetch knowledge graph
+      const graphRagService = require('./graphRagService');
+      additionalData.knowledgeGraph = await graphRagService.getWorkflowKnowledgeGraph(workflowId);
+    } catch (error) {
+      logger.warn('Failed to fetch knowledge graph:', error.message);
+    }
+    
+    try {
+      // Fetch architecture analysis
+      const workflowDataService = require('./workflowDataService');
+      additionalData.architectureAnalysis = await workflowDataService.getArchitectureAnalysis(workflowId);
+    } catch (error) {
+      logger.warn('Failed to fetch architecture analysis:', error.message);
+    }
+    
+    return additionalData;
+  }
+
+  async generateHTMLContent(workflowResults, projectContext, additionalData = {}) {
     try {
       // Safely extract results with defaults
       const ingestedDocuments = workflowResults?.ingestedDocuments || [];
@@ -170,9 +221,12 @@ class PDFGenerator {
                 <li><a href="#questions-answers">3. Questions & Answers</a></li>
                 <li><a href="#unanswered-questions">4. Unanswered Questions</a></li>
                 <li><a href="#clarification-questions">5. Clarification Questions</a></li>
-                <li><a href="#gap-analysis">6. Gap Analysis</a></li>
-                <li><a href="#recommendations">7. Next Steps & Recommendations</a></li>
-                <li><a href="#appendices">8. Appendices</a></li>
+                <li><a href="#architecture-analysis">6. Architecture Analysis</a></li>
+                <li><a href="#mindmap">7. Project Mindmap</a></li>
+                <li><a href="#knowledge-graph">8. Knowledge Graph</a></li>
+                <li><a href="#gap-analysis">9. Gap Analysis</a></li>
+                <li><a href="#recommendations">10. Next Steps & Recommendations</a></li>
+                <li><a href="#appendices">11. Appendices</a></li>
             </ul>
         </div>
     </div>
@@ -217,10 +271,34 @@ class PDFGenerator {
         </section>
     </div>
 
+    <!-- Architecture Analysis -->
+    <div class="page-break">
+        <section id="architecture-analysis">
+            <h2>6. Architecture Analysis</h2>
+            ${this.generateArchitectureAnalysisHTML(additionalData.architectureAnalysis)}
+        </section>
+    </div>
+
+    <!-- Mindmap -->
+    <div class="page-break">
+        <section id="mindmap">
+            <h2>7. Project Mindmap</h2>
+            ${this.generateMindmapHTML(additionalData.mindmap)}
+        </section>
+    </div>
+
+    <!-- Knowledge Graph -->
+    <div class="page-break">
+        <section id="knowledge-graph">
+            <h2>8. Knowledge Graph</h2>
+            ${this.generateKnowledgeGraphHTML(additionalData.knowledgeGraph)}
+        </section>
+    </div>
+
     <!-- Gap Analysis -->
     <div class="page-break">
         <section id="gap-analysis">
-            <h2>6. Gap Analysis</h2>
+            <h2>9. Gap Analysis</h2>
             ${this.generateGapAnalysisHTML(compiledResponse)}
         </section>
     </div>
@@ -228,7 +306,7 @@ class PDFGenerator {
     <!-- Recommendations -->
     <div class="page-break">
         <section id="recommendations">
-            <h2>7. Next Steps & Recommendations</h2>
+            <h2>10. Next Steps & Recommendations</h2>
             ${this.generateRecommendationsHTML(compiledResponse)}
         </section>
     </div>
@@ -236,7 +314,7 @@ class PDFGenerator {
     <!-- Appendices -->
     <div class="page-break">
         <section id="appendices">
-            <h2>8. Appendices</h2>
+            <h2>11. Appendices</h2>
             ${this.generateAppendicesHTML(workflowResults)}
         </section>
     </div>
@@ -714,15 +792,15 @@ class PDFGenerator {
 
         ${answeredQuestions.map(qa => `
             <div class="question-block">
-                <div class="question-text">Q: ${qa.question}</div>
-                <div class="answer-text">${qa.answer}</div>
+                <div class="question-text">Q: ${qa.question || qa.questionText || 'Question text not available'}</div>
+                <div class="answer-text">${qa.answer || qa.answerText || 'Answer not available'}</div>
                 <div style="margin-top: 1rem;">
                     <span class="confidence-${this.getConfidenceLevel(qa.confidence)}">
                         Confidence: ${Math.round((qa.confidence || 0) * 100)}%
                     </span>
                     ${qa.sources && qa.sources.length > 0 ? `
                         <div class="source-ref">
-                            Sources: ${qa.sources.map(s => s.documentName).join(', ')}
+                            Sources: ${qa.sources.map(s => s.documentName || s.fileName || s.source || 'Unknown').join(', ')}
                         </div>
                     ` : ''}
                 </div>
@@ -909,6 +987,244 @@ class PDFGenerator {
         <p><strong>Processing Time:</strong> ${workflowResults.duration || 'Not available'}</p>
         <p><strong>System Version:</strong> 1.0.0</p>
     `;
+  }
+
+  /**
+   * Generate Architecture Analysis section HTML
+   */
+  generateArchitectureAnalysisHTML(architectureAnalysis) {
+    if (!architectureAnalysis) {
+      return `
+        <div class="info-box">
+            <p>No architecture analysis available for this workflow.</p>
+            <p>Architecture analysis can be generated from the Architecture Analysis tab in the application.</p>
+        </div>
+      `;
+    }
+
+    // If it's a string, treat it as markdown-like content
+    if (typeof architectureAnalysis === 'string') {
+      return `
+        <div class="info-box">
+          <p><strong>Architecture Analysis Generated:</strong> ${new Date().toLocaleDateString()}</p>
+        </div>
+        <div class="analysis-content">
+          ${this.formatAnalysisContent(architectureAnalysis)}
+        </div>
+      `;
+    }
+
+    // If it's an object, extract relevant fields
+    return `
+      <div class="info-box">
+        <p><strong>Architecture Analysis:</strong> Comprehensive AWS architecture recommendations</p>
+      </div>
+      <div class="analysis-content">
+        ${this.formatAnalysisContent(architectureAnalysis.analysis || architectureAnalysis.content || JSON.stringify(architectureAnalysis, null, 2))}
+      </div>
+    `;
+  }
+
+  /**
+   * Generate Mindmap section HTML
+   */
+  generateMindmapHTML(mindmap) {
+    if (!mindmap) {
+      return `
+        <div class="info-box">
+            <p>No mindmap available for this workflow.</p>
+            <p>Mindmaps can be generated from the Mindmap tab in the application.</p>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="info-box">
+        <p><strong>Project Mindmap:</strong> Visual representation of project structure and relationships</p>
+        <p><strong>Generated:</strong> ${new Date().toLocaleDateString()}</p>
+      </div>
+      
+      <h3>Mindmap Structure</h3>
+      ${this.formatMindmapContent(mindmap)}
+      
+      <div class="warning-box">
+        <p><strong>Note:</strong> This is a text representation of the mindmap. The full interactive mindmap is available in the application.</p>
+      </div>
+    `;
+  }
+
+  /**
+   * Generate Knowledge Graph section HTML
+   */
+  generateKnowledgeGraphHTML(knowledgeGraph) {
+    if (!knowledgeGraph) {
+      return `
+        <div class="info-box">
+            <p>No knowledge graph available for this workflow.</p>
+            <p>Knowledge graphs can be generated from the Knowledge Graph tab in the application.</p>
+        </div>
+      `;
+    }
+
+    const nodes = knowledgeGraph.nodes || [];
+    const relationships = knowledgeGraph.relationships || [];
+    const entities = knowledgeGraph.entities || [];
+
+    return `
+      <div class="info-box">
+        <p><strong>Knowledge Graph:</strong> Entity relationships and knowledge extraction</p>
+        <p><strong>Entities:</strong> ${entities.length || nodes.length}</p>
+        <p><strong>Relationships:</strong> ${relationships.length}</p>
+        <p><strong>Generated:</strong> ${new Date().toLocaleDateString()}</p>
+      </div>
+      
+      <h3>Key Entities</h3>
+      ${this.formatKnowledgeGraphEntities(entities, nodes)}
+      
+      <h3>Relationships</h3>
+      ${this.formatKnowledgeGraphRelationships(relationships)}
+      
+      <div class="warning-box">
+        <p><strong>Note:</strong> This is a text representation of the knowledge graph. The full interactive graph is available in the application.</p>
+      </div>
+    `;
+  }
+
+  /**
+   * Format analysis content for display
+   */
+  formatAnalysisContent(content) {
+    if (!content) return '<p>No content available.</p>';
+    
+    // Convert markdown-like content to HTML
+    return content
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/\n/g, '<br>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/^(.*)$/gm, '<p>$1</p>')
+      .replace(/<p><\/p>/g, '')
+      .replace(/(<p>.*?<\/p>)\s*(<p>.*?<\/p>)/g, '$1$2');
+  }
+
+  /**
+   * Format mindmap content for display
+   */
+  formatMindmapContent(mindmap) {
+    if (!mindmap) return '<p>No mindmap content available.</p>';
+    
+    // If mindmap has a specific structure, format it
+    if (mindmap.nodes && mindmap.links) {
+      return `
+        <table>
+          <thead>
+            <tr>
+              <th>Node</th>
+              <th>Type</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${mindmap.nodes.map(node => `
+              <tr>
+                <td>${node.id || node.name || 'Unknown'}</td>
+                <td>${node.type || node.category || 'Node'}</td>
+                <td>${node.description || node.label || 'No description'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+    
+    // If it's a string or other format, display as text
+    if (typeof mindmap === 'string') {
+      return `<div class="analysis-content">${this.formatAnalysisContent(mindmap)}</div>`;
+    }
+    
+    return `<pre>${JSON.stringify(mindmap, null, 2)}</pre>`;
+  }
+
+  /**
+   * Format knowledge graph entities for display
+   */
+  formatKnowledgeGraphEntities(entities, nodes = []) {
+    const allEntities = [...(entities || []), ...(nodes || [])];
+    
+    if (allEntities.length === 0) {
+      return '<p>No entities found in the knowledge graph.</p>';
+    }
+
+    return `
+      <table>
+        <thead>
+          <tr>
+            <th>Entity</th>
+            <th>Type</th>
+            <th>Description</th>
+            <th>Properties</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${allEntities.slice(0, 20).map(entity => `
+            <tr>
+              <td>${entity.name || entity.id || entity.label || 'Unknown'}</td>
+              <td>${entity.type || entity.category || entity.labels?.[0] || 'Entity'}</td>
+              <td>${entity.description || entity.summary || 'No description'}</td>
+              <td>${this.formatEntityProperties(entity.properties || entity.metadata || {})}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      ${allEntities.length > 20 ? `<p><em>Showing first 20 of ${allEntities.length} entities.</em></p>` : ''}
+    `;
+  }
+
+  /**
+   * Format knowledge graph relationships for display
+   */
+  formatKnowledgeGraphRelationships(relationships) {
+    if (!relationships || relationships.length === 0) {
+      return '<p>No relationships found in the knowledge graph.</p>';
+    }
+
+    return `
+      <table>
+        <thead>
+          <tr>
+            <th>From</th>
+            <th>Relationship</th>
+            <th>To</th>
+            <th>Strength</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${relationships.slice(0, 20).map(rel => `
+            <tr>
+              <td>${rel.source || rel.from || rel.startNode || 'Unknown'}</td>
+              <td>${rel.type || rel.relationship || rel.label || 'RELATED_TO'}</td>
+              <td>${rel.target || rel.to || rel.endNode || 'Unknown'}</td>
+              <td>${rel.weight || rel.strength || rel.confidence || 'N/A'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      ${relationships.length > 20 ? `<p><em>Showing first 20 of ${relationships.length} relationships.</em></p>` : ''}
+    `;
+  }
+
+  /**
+   * Format entity properties for display
+   */
+  formatEntityProperties(properties) {
+    if (!properties || Object.keys(properties).length === 0) {
+      return 'None';
+    }
+    
+    return Object.entries(properties)
+      .slice(0, 3)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(', ');
   }
 
   getHeaderTemplate(projectContext) {

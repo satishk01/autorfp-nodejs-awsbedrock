@@ -242,10 +242,15 @@ class ArchitectureAnalysisService {
 
   /**
    * Analyze architecture using AWS Documentation MCP server and Bedrock Haiku 3
+   * with component preservation and approval prompts
    */
   async analyzeArchitecture(architectureDescription, workflowId) {
     try {
       logger.info(`Starting architecture analysis for workflow: ${workflowId}`);
+
+      // Extract user-specified components first
+      const userSpecifiedComponents = this.extractUserSpecifiedComponents(architectureDescription);
+      logger.info(`User-specified components identified: ${userSpecifiedComponents.join(', ')}`);
 
       // Initialize MCP client
       await this.initializeMCP();
@@ -254,14 +259,14 @@ class ArchitectureAnalysisService {
       const documentationQueries = this.generateDocumentationQueries(architectureDescription);
       const awsDocumentation = await this.queryMultipleTopics(documentationQueries);
       
-      // Extract recommended AWS services
+      // Extract recommended AWS services (additional to user specifications)
       const awsServices = this.extractAWSServices(architectureDescription, awsDocumentation);
 
       // Get additional service-specific information via MCP
       const serviceDetails = await this.getServiceDetails(awsServices);
 
-      // Create comprehensive prompt for Bedrock Haiku 3
-      const prompt = this.createAnalysisPrompt(architectureDescription, awsDocumentation, awsServices, serviceDetails);
+      // Create comprehensive prompt for Bedrock Haiku 3 with component preservation
+      const prompt = this.createAnalysisPrompt(architectureDescription, awsDocumentation, awsServices);
 
       // Use Bedrock Haiku 3 for analysis
       const analysis = await bedrockService.generateContent(prompt, {
@@ -270,20 +275,81 @@ class ArchitectureAnalysisService {
         temperature: 0.3
       });
 
+      // Validate that user-specified components are preserved
+      const validationResult = this.validateComponentPreservation(analysis, userSpecifiedComponents);
+
       logger.info('Architecture analysis completed successfully');
 
       return {
         analysis: analysis,
         awsServices: awsServices,
+        userSpecifiedComponents: userSpecifiedComponents,
+        componentValidation: validationResult,
         recommendations: this.extractRecommendations(analysis),
         documentation: awsDocumentation,
-        serviceDetails: serviceDetails
+        serviceDetails: serviceDetails,
+        preservationStatus: {
+          preserved: validationResult.preserved,
+          missing: validationResult.missing,
+          needsApproval: validationResult.needsApproval
+        }
       };
 
     } catch (error) {
       logger.error('Error in architecture analysis:', error);
       throw new Error('Failed to analyze architecture: ' + error.message);
     }
+  }
+
+  /**
+   * Validate that user-specified components are preserved in the analysis
+   */
+  validateComponentPreservation(analysis, userSpecifiedComponents) {
+    const analysisLower = analysis.toLowerCase();
+    const preserved = [];
+    const missing = [];
+    const needsApproval = [];
+
+    userSpecifiedComponents.forEach(component => {
+      const componentLower = component.toLowerCase();
+      const componentKeywords = componentLower.split(/[\s\-\/]+/);
+      
+      // Check if component is mentioned in the analysis
+      const isPreserved = componentKeywords.some(keyword => 
+        keyword.length > 2 && analysisLower.includes(keyword)
+      );
+
+      if (isPreserved) {
+        preserved.push(component);
+      } else {
+        missing.push(component);
+        needsApproval.push({
+          component: component,
+          reason: 'Component not found in analysis',
+          action: 'Please confirm if this component should be included'
+        });
+      }
+    });
+
+    // Check for potential replacements or removals
+    const replacementKeywords = ['replace', 'instead of', 'rather than', 'substitute', 'alternative to'];
+    replacementKeywords.forEach(keyword => {
+      if (analysisLower.includes(keyword)) {
+        needsApproval.push({
+          component: 'Multiple components',
+          reason: `Analysis suggests replacements (keyword: "${keyword}")`,
+          action: 'Please review suggested changes and approve any component modifications'
+        });
+      }
+    });
+
+    return {
+      preserved: preserved,
+      missing: missing,
+      needsApproval: needsApproval,
+      allPreserved: missing.length === 0,
+      requiresApproval: needsApproval.length > 0
+    };
   }
 
   /**
@@ -388,14 +454,25 @@ class ArchitectureAnalysisService {
   }
 
   /**
-   * Create comprehensive analysis prompt for Bedrock Haiku 3
+   * Create comprehensive analysis prompt for Bedrock Haiku 3 with component preservation
    */
   createAnalysisPrompt(architectureDescription, awsDocumentation, awsServices) {
     const docContent = awsDocumentation?.content?.map(doc => 
       `${doc.title}: ${doc.content}`
     ).join('\n\n') || 'No specific AWS documentation available.';
 
+    // Extract user-specified components to preserve them
+    const userSpecifiedComponents = this.extractUserSpecifiedComponents(architectureDescription);
+
     return `You are an AWS Solutions Architect expert. Analyze the following architecture requirements and provide comprehensive recommendations using AWS services and best practices.
+
+CRITICAL INSTRUCTIONS:
+- PRESERVE ALL USER-SPECIFIED COMPONENTS: The user has explicitly mentioned specific AWS services and components that MUST be included in the final architecture
+- ONLY ADD, NEVER REMOVE: You can suggest additional services for security, best practices, or AWS blueprint compliance, but NEVER remove or replace user-specified components
+- If you need to suggest changes to user-specified components, you MUST ask for approval and explain why
+
+USER-SPECIFIED COMPONENTS TO PRESERVE:
+${userSpecifiedComponents.length > 0 ? userSpecifiedComponents.join('\n- ') : 'None explicitly specified'}
 
 ARCHITECTURE REQUIREMENTS:
 ${architectureDescription}
@@ -403,47 +480,165 @@ ${architectureDescription}
 RELEVANT AWS DOCUMENTATION:
 ${docContent}
 
-RECOMMENDED AWS SERVICES:
+RECOMMENDED ADDITIONAL AWS SERVICES (to complement user specifications):
 ${awsServices.join(', ')}
 
 Please provide a detailed analysis covering:
 
-1. **ARCHITECTURE OVERVIEW**
-   - High-level architecture design
+1. **PRESERVED USER ARCHITECTURE**
+   - Confirm all user-specified components are included
+   - Explain how each user-specified component fits in the architecture
+   - Highlight any potential issues with user specifications (but keep them)
+
+2. **RECOMMENDED ADDITIONS FOR ENHANCEMENT**
+   - Additional AWS services to improve security
+   - Services to enhance performance and scalability
+   - Services to meet AWS Well-Architected Framework principles
+   - Services to follow AWS blueprint standards
+
+3. **ARCHITECTURE OVERVIEW**
+   - High-level architecture design incorporating user specifications
    - Key components and their relationships
    - Data flow and integration patterns
 
-2. **AWS SERVICES RECOMMENDATIONS**
-   - Specific AWS services for each component
-   - Justification for service selection
+4. **AWS SERVICES INTEGRATION**
+   - How user-specified services integrate with recommended additions
    - Service configuration recommendations
+   - Inter-service communication patterns
 
-3. **SCALABILITY & PERFORMANCE**
-   - Auto-scaling strategies
-   - Performance optimization techniques
-   - Load balancing and distribution
+5. **SECURITY ENHANCEMENTS**
+   - Security services to add (without removing user components)
+   - Identity and access management recommendations
+   - Data encryption and protection strategies
 
-4. **SECURITY BEST PRACTICES**
-   - Security architecture recommendations
-   - Identity and access management
-   - Data encryption and protection
+6. **SCALABILITY & PERFORMANCE ADDITIONS**
+   - Auto-scaling strategies for user-specified components
+   - Performance optimization services to add
+   - Load balancing and distribution enhancements
 
-5. **COST OPTIMIZATION**
-   - Cost-effective service selections
-   - Reserved instances and savings plans
-   - Monitoring and cost management
+7. **COST OPTIMIZATION SUGGESTIONS**
+   - Cost-effective configurations for user-specified services
+   - Additional services for cost monitoring and optimization
+   - Reserved instances and savings plans recommendations
 
-6. **OPERATIONAL EXCELLENCE**
-   - Monitoring and logging strategy
-   - Backup and disaster recovery
-   - DevOps and CI/CD integration
+8. **OPERATIONAL EXCELLENCE ADDITIONS**
+   - Monitoring and logging services to add
+   - Backup and disaster recovery enhancements
+   - DevOps and CI/CD integration services
 
-7. **IMPLEMENTATION ROADMAP**
-   - Phase-wise implementation plan
-   - Migration strategies (if applicable)
-   - Timeline and milestones
+9. **COMPLIANCE AND BEST PRACTICES**
+   - AWS Well-Architected Framework alignment
+   - AWS blueprint standard compliance
+   - Industry best practices integration
 
-Format the response in clear, structured markdown with specific AWS service names, configuration details, and actionable recommendations.`;
+10. **IMPLEMENTATION ROADMAP**
+    - Phase-wise implementation plan preserving user components
+    - Migration strategies (if applicable)
+    - Timeline and milestones
+
+IMPORTANT REMINDERS:
+- Keep ALL user-specified components in the final architecture
+- Only suggest ADDITIONS, not replacements
+- If you identify potential issues with user specifications, mention them but still include the components
+- Explain how additional services enhance the user's original design
+- Format the response in clear, structured markdown with specific AWS service names and actionable recommendations`;
+  }
+
+  /**
+   * Extract user-specified AWS components from the architecture description
+   */
+  extractUserSpecifiedComponents(description) {
+    const components = [];
+    const text = description.toLowerCase();
+    
+    // AWS service patterns to identify user-specified components
+    const servicePatterns = [
+      // Compute services
+      { pattern: /\b(ec2|elastic compute cloud)\b/gi, service: 'Amazon EC2' },
+      { pattern: /\b(lambda|aws lambda)\b/gi, service: 'AWS Lambda' },
+      { pattern: /\b(ecs|elastic container service)\b/gi, service: 'Amazon ECS' },
+      { pattern: /\b(eks|elastic kubernetes service)\b/gi, service: 'Amazon EKS' },
+      { pattern: /\b(fargate|aws fargate)\b/gi, service: 'AWS Fargate' },
+      
+      // Storage services
+      { pattern: /\b(s3|simple storage service)\b/gi, service: 'Amazon S3' },
+      { pattern: /\b(ebs|elastic block store)\b/gi, service: 'Amazon EBS' },
+      { pattern: /\b(efs|elastic file system)\b/gi, service: 'Amazon EFS' },
+      
+      // Database services
+      { pattern: /\b(rds|relational database service)\b/gi, service: 'Amazon RDS' },
+      { pattern: /\b(dynamodb|dynamo db)\b/gi, service: 'Amazon DynamoDB' },
+      { pattern: /\b(aurora|amazon aurora)\b/gi, service: 'Amazon Aurora' },
+      { pattern: /\b(elasticache|elastic cache)\b/gi, service: 'Amazon ElastiCache' },
+      { pattern: /\b(redshift|amazon redshift)\b/gi, service: 'Amazon Redshift' },
+      { pattern: /\b(postgres|postgresql)\b/gi, service: 'PostgreSQL on Amazon RDS' },
+      { pattern: /\b(mysql)\b/gi, service: 'MySQL on Amazon RDS' },
+      
+      // Networking services
+      { pattern: /\b(vpc|virtual private cloud)\b/gi, service: 'Amazon VPC' },
+      { pattern: /\b(cloudfront|cloud front)\b/gi, service: 'Amazon CloudFront' },
+      { pattern: /\b(api gateway|apigateway)\b/gi, service: 'Amazon API Gateway' },
+      { pattern: /\b(route 53|route53)\b/gi, service: 'Amazon Route 53' },
+      { pattern: /\b(alb|application load balancer)\b/gi, service: 'Application Load Balancer' },
+      { pattern: /\b(nlb|network load balancer)\b/gi, service: 'Network Load Balancer' },
+      { pattern: /\b(elb|elastic load balancer)\b/gi, service: 'Elastic Load Balancer' },
+      
+      // Security services
+      { pattern: /\b(iam|identity and access management)\b/gi, service: 'AWS IAM' },
+      { pattern: /\b(cognito|amazon cognito)\b/gi, service: 'Amazon Cognito' },
+      { pattern: /\b(kms|key management service)\b/gi, service: 'AWS KMS' },
+      { pattern: /\b(waf|web application firewall)\b/gi, service: 'AWS WAF' },
+      { pattern: /\b(shield|aws shield)\b/gi, service: 'AWS Shield' },
+      
+      // Analytics services
+      { pattern: /\b(kinesis|amazon kinesis)\b/gi, service: 'Amazon Kinesis' },
+      { pattern: /\b(emr|elastic mapreduce)\b/gi, service: 'Amazon EMR' },
+      { pattern: /\b(quicksight|amazon quicksight)\b/gi, service: 'Amazon QuickSight' },
+      
+      // Monitoring services
+      { pattern: /\b(cloudwatch|cloud watch)\b/gi, service: 'Amazon CloudWatch' },
+      { pattern: /\b(x-ray|xray|aws x-ray)\b/gi, service: 'AWS X-Ray' },
+      { pattern: /\b(cloudtrail|cloud trail)\b/gi, service: 'AWS CloudTrail' },
+      
+      // Messaging services
+      { pattern: /\b(sqs|simple queue service)\b/gi, service: 'Amazon SQS' },
+      { pattern: /\b(sns|simple notification service)\b/gi, service: 'Amazon SNS' },
+      
+      // DevOps services
+      { pattern: /\b(codepipeline|code pipeline)\b/gi, service: 'AWS CodePipeline' },
+      { pattern: /\b(codebuild|code build)\b/gi, service: 'AWS CodeBuild' },
+      { pattern: /\b(codedeploy|code deploy)\b/gi, service: 'AWS CodeDeploy' },
+      
+      // Application services
+      { pattern: /\b(step functions|stepfunctions)\b/gi, service: 'AWS Step Functions' },
+      { pattern: /\b(eventbridge|event bridge)\b/gi, service: 'Amazon EventBridge' },
+      
+      // Frontend frameworks and technologies
+      { pattern: /\b(angular)\b/gi, service: 'Angular (Frontend Framework)' },
+      { pattern: /\b(react)\b/gi, service: 'React (Frontend Framework)' },
+      { pattern: /\b(vue|vue\.js)\b/gi, service: 'Vue.js (Frontend Framework)' }
+    ];
+    
+    // Check for each service pattern
+    servicePatterns.forEach(({ pattern, service }) => {
+      if (pattern.test(description)) {
+        components.push(service);
+      }
+    });
+    
+    // Also look for explicit mentions of AWS services
+    const awsServiceMentions = description.match(/amazon\s+\w+|aws\s+\w+/gi);
+    if (awsServiceMentions) {
+      awsServiceMentions.forEach(mention => {
+        const cleanMention = mention.replace(/\b(amazon|aws)\s+/gi, '').trim();
+        if (cleanMention.length > 2) {
+          components.push(`AWS/Amazon ${cleanMention}`);
+        }
+      });
+    }
+    
+    // Remove duplicates and return
+    return [...new Set(components)];
   }
 
   /**

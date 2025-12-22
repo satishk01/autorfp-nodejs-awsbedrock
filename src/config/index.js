@@ -27,6 +27,13 @@ const config = {
   redis: {
     url: process.env.REDIS_URL || 'disabled' // Set to 'disabled' to use in-memory cache
   },
+  neo4j: {
+    enabled: process.env.NEO4J_ENABLED !== 'false', // Default to true
+    uri: process.env.NEO4J_URI || 'bolt://localhost:7687',
+    username: process.env.NEO4J_USERNAME || 'neo4j',
+    password: process.env.NEO4J_PASSWORD || 'your_password',
+    database: process.env.NEO4J_DATABASE || 'neo4j'
+  },
   upload: {
     maxFileSize: process.env.MAX_FILE_SIZE || '100MB',
     uploadDir: process.env.UPLOAD_DIR || './uploads',

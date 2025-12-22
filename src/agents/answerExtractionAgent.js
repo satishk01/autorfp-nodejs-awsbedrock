@@ -1,6 +1,7 @@
 const { BaseAgent } = require('./baseAgent');
 const logger = require('../utils/logger');
 const ragService = require('../services/ragService');
+const graphRagService = require('../services/graphRagService');
 
 class AnswerExtractionAgent extends BaseAgent {
   constructor() {
@@ -140,11 +141,56 @@ Analyze the provided RFP questions and company documents, then return answers in
       const answeredQuestions = [];
       const unansweredQuestions = [];
 
-      logger.info(`Processing ${allQuestions.length} questions with RAG`);
+      logger.info(`Processing ${allQuestions.length} questions with GraphRAG`);
+
+      // Initialize GraphRAG service
+      await graphRagService.initialize();
 
       for (const question of allQuestions) {
         try {
-          const result = await ragService.answerQuestion(question.questionText || question.question, workflowId);
+          // Try GraphRAG hybrid search first (combines vector + graph)
+          let result;
+          if (graphRagService.neo4jEnabled && workflowId) {
+            result = await graphRagService.hybridSearch(
+              question.questionText || question.question, 
+              workflowId,
+              {
+                limit: 5,
+                includeEntities: true,
+                includeRelationships: true
+              }
+            );
+            
+            // Convert GraphRAG results to answer format
+            if (result && result.length > 0) {
+              const topResult = result[0];
+              const answer = this.formatGraphRAGAnswer(topResult, result);
+              const confidence = topResult.combinedScore || topResult.vectorScore || 0;
+              
+              if (confidence > 0.25) { // Lower threshold for GraphRAG due to combined scoring
+                answeredQuestions.push({
+                  questionId: question.id,
+                  question: question.questionText || question.question,
+                  answer: answer,
+                  confidence: Math.min(confidence, 1.0),
+                  sources: result.slice(0, 3).map(r => ({
+                    documentName: r.documentId || 'Document',
+                    excerpt: r.content?.substring(0, 200) || '',
+                    relevanceScore: r.combinedScore || r.vectorScore || 0,
+                    entities: r.entities || [],
+                    relatedEntities: r.relatedEntities || []
+                  })),
+                  answerType: confidence > 0.6 ? 'direct' : 'inferred',
+                  completeness: confidence > 0.5 ? 'complete' : 'partial',
+                  searchType: 'graphrag_hybrid'
+                });
+                continue;
+              }
+            }
+          }
+          
+          // Fallback to regular RAG if GraphRAG doesn't produce good results
+          result = await ragService.answerQuestion(question.questionText || question.question, workflowId);
           
           if (result.confidence > 0.3) { // Minimum confidence threshold
             answeredQuestions.push({
@@ -158,7 +204,8 @@ Analyze the provided RFP questions and company documents, then return answers in
                 relevanceScore: source.similarity
               })),
               answerType: result.confidence > 0.8 ? 'direct' : 'inferred',
-              completeness: result.confidence > 0.7 ? 'complete' : 'partial'
+              completeness: result.confidence > 0.7 ? 'complete' : 'partial',
+              searchType: 'vector_only'
             });
           } else {
             unansweredQuestions.push({
@@ -185,8 +232,17 @@ Analyze the provided RFP questions and company documents, then return answers in
         partiallyAnswered: 0,
         unanswered: unansweredQuestions.length,
         averageConfidence: answeredQuestions.length > 0 ? 
-          answeredQuestions.reduce((sum, q) => sum + q.confidence, 0) / answeredQuestions.length : 0
+          answeredQuestions.reduce((sum, q) => sum + q.confidence, 0) / answeredQuestions.length : 0,
+        graphRagUsed: graphRagService.neo4jEnabled,
+        hybridAnswers: answeredQuestions.filter(a => a.searchType === 'graphrag_hybrid').length,
+        vectorOnlyAnswers: answeredQuestions.filter(a => a.searchType === 'vector_only').length
       };
+
+      logger.info('GraphRAG answer extraction completed', {
+        answered: answerSummary.answered,
+        hybridAnswers: answerSummary.hybridAnswers,
+        vectorOnlyAnswers: answerSummary.vectorOnlyAnswers
+      });
 
       return {
         answeredQuestions,
@@ -199,6 +255,29 @@ Analyze the provided RFP questions and company documents, then return answers in
       logger.error('Error in RAG-based answer extraction', { error: error.message });
       return null;
     }
+  }
+
+  formatGraphRAGAnswer(topResult, allResults) {
+    let answer = topResult.content || '';
+    
+    // Enhance answer with entity information if available
+    if (topResult.entities && topResult.entities.length > 0) {
+      answer += `\n\nKey entities mentioned: ${topResult.entities.join(', ')}`;
+    }
+    
+    // Add related context from other results
+    if (allResults.length > 1) {
+      const additionalContext = allResults.slice(1, 3)
+        .map(r => r.content?.substring(0, 150))
+        .filter(Boolean)
+        .join(' ... ');
+      
+      if (additionalContext) {
+        answer += `\n\nAdditional context: ${additionalContext}`;
+      }
+    }
+    
+    return answer;
   }
 
   prepareExtractionInput(rfpQuestions, companyDocuments, requirementsAnalysis) {

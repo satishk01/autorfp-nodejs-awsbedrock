@@ -9,7 +9,11 @@ import {
   Settings,
   Copy,
   Download,
-  RefreshCw
+  RefreshCw,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  Shield
 } from 'lucide-react';
 
 const ArchitectureAnalysis = ({ workflowId }) => {
@@ -18,6 +22,9 @@ const ArchitectureAnalysis = ({ workflowId }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState(null);
   const [awsServices, setAwsServices] = useState([]);
+  const [userSpecifiedComponents, setUserSpecifiedComponents] = useState([]);
+  const [preservationStatus, setPreservationStatus] = useState(null);
+  const [componentValidation, setComponentValidation] = useState(null);
   const textareaRef = useRef(null);
 
   const handleAnalyze = async () => {
@@ -30,6 +37,9 @@ const ArchitectureAnalysis = ({ workflowId }) => {
     setError(null);
     setAnalysis('');
     setAwsServices([]);
+    setUserSpecifiedComponents([]);
+    setPreservationStatus(null);
+    setComponentValidation(null);
 
     try {
       console.log('Starting architecture analysis...');
@@ -50,6 +60,9 @@ const ArchitectureAnalysis = ({ workflowId }) => {
       if (result.success) {
         setAnalysis(result.analysis);
         setAwsServices(result.awsServices || []);
+        setUserSpecifiedComponents(result.userSpecifiedComponents || []);
+        setPreservationStatus(result.preservationStatus || null);
+        setComponentValidation(result.componentValidation || null);
       } else {
         setError(result.error || 'Failed to analyze architecture');
       }
@@ -81,6 +94,9 @@ const ArchitectureAnalysis = ({ workflowId }) => {
     setUserInput('');
     setAnalysis('');
     setAwsServices([]);
+    setUserSpecifiedComponents([]);
+    setPreservationStatus(null);
+    setComponentValidation(null);
     setError(null);
     textareaRef.current?.focus();
   };
@@ -118,7 +134,7 @@ const ArchitectureAnalysis = ({ workflowId }) => {
             id="architecture-input"
             value={userInput}
             onChange={(e) => setUserInput(e.target.value)}
-            placeholder="Example: I need to build a scalable web application with microservices architecture, real-time data processing, user authentication, and file storage. The system should handle 10,000 concurrent users and process 1M transactions per day..."
+            placeholder="Example: I want a simple web portal with Angular deployed in S3 with CloudFront, Business tier as Lambda + API Gateway and database tier as Aurora PostgreSQL..."
             className="w-full h-32 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 resize-none"
             disabled={isAnalyzing}
           />
@@ -128,8 +144,8 @@ const ArchitectureAnalysis = ({ workflowId }) => {
         </div>
         <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center space-x-2 text-sm text-gray-600">
-            <BookOpen className="h-4 w-4" />
-            <span>Powered by AWS Documentation & Best Practices</span>
+            <Shield className="h-4 w-4" />
+            <span>Your specified components will be preserved • Only additions suggested</span>
           </div>
           <button
             onClick={handleAnalyze}
@@ -151,6 +167,71 @@ const ArchitectureAnalysis = ({ workflowId }) => {
         </div>
       </div>
 
+      {/* Component Preservation Status */}
+      {userSpecifiedComponents.length > 0 && (
+        <div className="p-4 border-b border-gray-200 bg-green-50">
+          <h4 className="text-sm font-medium text-green-900 mb-2 flex items-center">
+            <Shield className="h-4 w-4 mr-2" />
+            Your Specified Components (Preserved)
+          </h4>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {userSpecifiedComponents.map((component, index) => (
+              <span
+                key={index}
+                className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+              >
+                <CheckCircle className="h-3 w-3 mr-1" />
+                {component}
+              </span>
+            ))}
+          </div>
+          
+          {preservationStatus && (
+            <div className="space-y-2">
+              {preservationStatus.preserved.length > 0 && (
+                <div className="flex items-center text-xs text-green-700">
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  <span>{preservationStatus.preserved.length} components preserved in analysis</span>
+                </div>
+              )}
+              
+              {preservationStatus.missing.length > 0 && (
+                <div className="flex items-center text-xs text-red-700">
+                  <XCircle className="h-3 w-3 mr-1" />
+                  <span>{preservationStatus.missing.length} components may need attention</span>
+                </div>
+              )}
+              
+              {preservationStatus.needsApproval && (
+                <div className="flex items-center text-xs text-yellow-700">
+                  <AlertTriangle className="h-3 w-3 mr-1" />
+                  <span>Some changes may require your approval</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Component Validation Warnings */}
+      {componentValidation && componentValidation.needsApproval.length > 0 && (
+        <div className="p-4 border-b border-gray-200 bg-yellow-50">
+          <h4 className="text-sm font-medium text-yellow-900 mb-2 flex items-center">
+            <AlertTriangle className="h-4 w-4 mr-2" />
+            Approval Required for Component Changes
+          </h4>
+          <div className="space-y-2">
+            {componentValidation.needsApproval.map((item, index) => (
+              <div key={index} className="bg-yellow-100 rounded-md p-3">
+                <div className="text-sm font-medium text-yellow-800">{item.component}</div>
+                <div className="text-xs text-yellow-700 mt-1">{item.reason}</div>
+                <div className="text-xs text-yellow-600 mt-1 italic">{item.action}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Error Display */}
       {error && (
         <div className="p-4 bg-red-50 border-l-4 border-red-400">
@@ -166,16 +247,19 @@ const ArchitectureAnalysis = ({ workflowId }) => {
       {/* AWS Services Recommendations */}
       {awsServices.length > 0 && (
         <div className="p-4 border-b border-gray-200 bg-blue-50">
-          <h4 className="text-sm font-medium text-blue-900 mb-2">Recommended AWS Services:</h4>
+          <h4 className="text-sm font-medium text-blue-900 mb-2">Additional AWS Services Recommended:</h4>
           <div className="flex flex-wrap gap-2">
             {awsServices.map((service, index) => (
               <span
                 key={index}
                 className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
               >
-                {service}
+                + {service}
               </span>
             ))}
+          </div>
+          <div className="mt-2 text-xs text-blue-700">
+            These services complement your specified components for better security, performance, and AWS best practices.
           </div>
         </div>
       )}

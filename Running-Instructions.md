@@ -34,6 +34,11 @@ The RFP Automation System is a full-stack application that automates RFP (Reques
    - Google Generative AI API key
    - Get from: https://makersuite.google.com/app/apikey
 
+3. **Neo4j Database** (optional, for GraphRAG features)
+   - Neo4j Community Edition (local installation)
+   - Download from: https://neo4j.com/download/
+   - Default credentials: username=neo4j, password=your_password
+
 ## Installation Steps
 
 ### Step 1: Clone and Setup Project
@@ -73,6 +78,13 @@ DATABASE_URL=./data/rfp_system.db
 # Redis (disabled - uses in-memory cache instead)
 REDIS_URL=disabled
 
+# Neo4j Configuration (Optional - for GraphRAG Knowledge Graph)
+NEO4J_ENABLED=true
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=your_password
+NEO4J_DATABASE=neo4j
+
 # File Upload
 MAX_FILE_SIZE=100MB
 UPLOAD_DIR=./uploads
@@ -98,6 +110,9 @@ npm install express cors helmet multer socket.io dotenv
 npm install winston sqlite3 sqlite
 npm install @aws-sdk/client-bedrock-runtime
 npm install @google/generative-ai
+
+# Install GraphRAG dependencies (for Neo4j integration)
+npm install neo4j-driver uuid
 npm install pdf-parse mammoth exceljs csv-parser
 npm install puppeteer chromadb redis
 npm install @modelcontextprotocol/sdk
@@ -106,7 +121,42 @@ npm install @modelcontextprotocol/sdk
 npm install --save-dev nodemon
 ```
 
-### Step 4: Install Frontend Dependencies
+### Step 4: Setup Neo4j (Optional - for GraphRAG Knowledge Graph)
+
+**Option 1: Neo4j Desktop (Recommended for development)**
+1. Download Neo4j Desktop from: https://neo4j.com/download/
+2. Install and create a new project
+3. Create a new database with:
+   - Name: `rfp-graphrag`
+   - Password: `your_password` (update in .env file)
+4. Start the database
+5. Verify connection at: http://localhost:7474
+
+**Option 2: Neo4j Community Server**
+```bash
+# Using Docker (easiest)
+docker run \
+    --name neo4j-rfp \
+    -p7474:7474 -p7687:7687 \
+    -d \
+    -v $HOME/neo4j/data:/data \
+    -v $HOME/neo4j/logs:/logs \
+    -v $HOME/neo4j/import:/var/lib/neo4j/import \
+    -v $HOME/neo4j/plugins:/plugins \
+    --env NEO4J_AUTH=neo4j/your_password \
+    neo4j:latest
+
+# Or download and install manually from neo4j.com
+```
+
+**Option 3: Disable Neo4j (Vector-only mode)**
+If you don't want to install Neo4j, set in `.env`:
+```env
+NEO4J_ENABLED=false
+```
+The system will work with vector-only RAG (no knowledge graph features).
+
+### Step 5: Install Frontend Dependencies
 ```bash
 # Navigate to client directory
 cd client
@@ -118,7 +168,7 @@ npm install
 cd ..
 ```
 
-### Step 5: Create Required Files and Directories
+### Step 6: Create Required Files and Directories
 ```bash
 # Create database schema (if not exists)
 mkdir -p data
@@ -224,7 +274,14 @@ NODE_ENV=production node src/server.js
 - **Architecture Diagrams**: Visual AWS diagrams with technical writeups
 - **PDF Reports**: Generate comprehensive PDF reports
 
-### 4. Architecture Diagram Features
+### 4. GraphRAG Knowledge Graph Features (Optional)
+- **Entity Extraction**: AI-powered entity identification from documents
+- **Relationship Mapping**: Automatic relationship discovery between entities
+- **Hybrid Search**: Combines vector similarity with graph traversal
+- **Knowledge Graph Visualization**: Interactive graph display
+- **Enhanced Context**: Richer answers using entity relationships
+
+### 5. Architecture Diagram Features
 - **AWS Component Shapes**: Distinctive service shapes (S3 bucket, RDS cylinder, Lambda function, etc.)
 - **Multiple Formats**: Draw.io XML, Mermaid, SVG, PNG export
 - **Technical Writeups**: Claude-generated technical analysis for each connection
@@ -263,7 +320,23 @@ rm -f data/rfp_system.db
 # Restart the application to recreate database
 ```
 
-#### 5. File Upload Issues
+#### 5. Neo4j Connection Issues (GraphRAG)
+```bash
+# Check if Neo4j is running
+# Neo4j Desktop: Check status in application
+# Docker: docker ps | grep neo4j
+
+# Test connection
+curl http://localhost:7474
+
+# Reset Neo4j data (will lose all graph data)
+# Stop Neo4j, delete data directory, restart
+
+# Disable Neo4j if not needed
+# Set NEO4J_ENABLED=false in .env file
+```
+
+#### 6. File Upload Issues
 - Check `uploads` directory permissions
 - Verify `MAX_FILE_SIZE` setting in `.env`
 - Ensure sufficient disk space

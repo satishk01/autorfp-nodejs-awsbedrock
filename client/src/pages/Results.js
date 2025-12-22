@@ -23,6 +23,7 @@ import {
 import MindmapViewer from '../components/MindmapViewer';
 import ArchitectureAnalysis from '../components/ArchitectureAnalysis';
 import ArchitectureDiagram from '../components/ArchitectureDiagram';
+import KnowledgeGraph from '../components/KnowledgeGraph';
 
 const Results = () => {
   const { workflowId } = useParams();
@@ -112,6 +113,7 @@ const Results = () => {
     { id: 'mindmap', name: 'Mindmap', icon: Share2 },
     { id: 'architecture', name: 'Architecture Analysis', icon: Cloud },
     { id: 'diagram', name: 'Architecture Diagram', icon: Layers },
+    { id: 'knowledge-graph', name: 'Knowledge Graph', icon: Share2 },
   ];
 
   if (isLoading) {
@@ -969,6 +971,7 @@ const Results = () => {
           {activeTab === 'mindmap' && <MindmapViewer workflowId={workflowId} />}
           {activeTab === 'architecture' && <ArchitectureAnalysis workflowId={workflowId} />}
           {activeTab === 'diagram' && <ArchitectureDiagram workflowId={workflowId} />}
+          {activeTab === 'knowledge-graph' && <KnowledgeGraph workflowId={workflowId} />}
         </div>
       </div>
     </div>

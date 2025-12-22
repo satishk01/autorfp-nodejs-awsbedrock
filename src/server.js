@@ -17,6 +17,7 @@ const dataService = require('./services/workflowDataService');
 const rfpRoutes = require('./routes/rfp');
 const documentsRoutes = require('./routes/documents');
 const workflowRoutes = require('./routes/workflow');
+const graphragRoutes = require('./routes/graphrag');
 
 class RFPServer {
   constructor() {
@@ -150,6 +151,7 @@ class RFPServer {
     this.app.use('/api/rfp', rfpRoutes);
     this.app.use('/api/documents', documentsRoutes);
     this.app.use('/api/workflow', workflowRoutes);
+    this.app.use('/api/graphrag', graphragRoutes);
 
     // Main RFP processing endpoint
     this.app.post('/api/process-rfp', this.upload.array('documents', 10), async (req, res) => {
@@ -374,7 +376,7 @@ class RFPServer {
         const { workflowId } = req.params;
         const workflowStatus = await agentOrchestrator.getWorkflowStatus(workflowId);
 
-        if (workflowStatus.error) {
+        if (!workflowStatus || workflowStatus.error) {
           return res.status(404).json({ error: 'Workflow not found' });
         }
 
@@ -385,8 +387,12 @@ class RFPServer {
           });
         }
 
-        const results = workflowStatus.results;
-        const projectContext = workflowStatus.projectContext || req.body.projectContext || {};
+        const results = workflowStatus.results || {};
+        // Ensure workflowId is available in results for additional data fetching
+        results.workflowId = workflowId;
+        
+        const projectContext = (workflowStatus && workflowStatus.projectContext) || req.body.projectContext || {};
+        projectContext.workflowId = workflowId;
 
         // Generate PDF
         const pdfBuffer = await pdfGenerator.generateRFPReport(results, projectContext);
@@ -420,15 +426,15 @@ class RFPServer {
       this.app.get('*', (req, res) => {
         res.sendFile(path.join(process.cwd(), 'client/build', 'index.html'));
       });
-    }
-
-    // 404 handler
-    this.app.use('*', (req, res) => {
-      res.status(404).json({
-        error: 'Route not found',
-        path: req.originalUrl
+    } else {
+      // 404 handler for development
+      this.app.use((req, res) => {
+        res.status(404).json({
+          error: 'Route not found',
+          path: req.originalUrl
+        });
       });
-    });
+    }
   }
 
   setupSocketIO() {
@@ -530,6 +536,15 @@ class RFPServer {
         logger.info('RAG service initialized successfully');
       } else {
         logger.warn('RAG service initialization failed, answers may be limited');
+      }
+
+      // Initialize GraphRAG service
+      try {
+        const graphRagService = require('./services/graphRagService');
+        await graphRagService.initialize();
+        logger.info('GraphRAG service initialized successfully');
+      } catch (error) {
+        logger.warn('GraphRAG service initialization failed, falling back to vector-only RAG:', error.message);
       }
 
       // Clean up any corrupted workflows from previous runs

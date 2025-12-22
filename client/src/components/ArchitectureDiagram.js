@@ -31,7 +31,7 @@ const ArchitectureDiagram = ({ workflowId }) => {
     setDiagramData(null);
 
     try {
-      console.log('Generating architecture diagram...');
+      console.log('Generating professional architecture diagram...');
       
       const response = await fetch(`/api/rfp/workflow/${workflowId}/generate-architecture-diagram`, {
         method: 'POST',
@@ -39,7 +39,8 @@ const ArchitectureDiagram = ({ workflowId }) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          architectureAnalysis: architectureAnalysis.trim()
+          architectureAnalysis: architectureAnalysis.trim(),
+          useProfessional: true // Use professional service by default
         })
       });
 
@@ -48,6 +49,13 @@ const ArchitectureDiagram = ({ workflowId }) => {
 
       if (result.success) {
         setDiagramData(result.diagram);
+        
+        // Show success message with service type
+        if (result.fallback) {
+          setError(`Professional diagram generation failed, using standard diagram: ${result.message}`);
+        } else if (result.type === 'professional') {
+          console.log('Professional AWS architecture diagram generated successfully');
+        }
       } else {
         setError(result.error || 'Failed to generate architecture diagram');
       }
@@ -189,9 +197,12 @@ const ArchitectureDiagram = ({ workflowId }) => {
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
         <div className="flex items-center space-x-2">
           <Layers className="h-5 w-5 text-purple-600" />
-          <h3 className="text-lg font-medium text-gray-900">Architecture Diagram</h3>
+          <h3 className="text-lg font-medium text-gray-900">Professional Architecture Diagram</h3>
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-            Google Gemini
+            AWS Enterprise Grade
+          </span>
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            Google Gemini + AWS Bedrock
           </span>
         </div>
         <div className="flex items-center space-x-2">
@@ -226,7 +237,7 @@ const ArchitectureDiagram = ({ workflowId }) => {
         <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center space-x-2 text-sm text-gray-600">
             <Zap className="h-4 w-4" />
-            <span>Generates Draw.io, Mermaid, and SVG formats</span>
+            <span>Generates professional AWS diagrams with proper service shapes, Draw.io XML, Mermaid, and SVG formats</span>
           </div>
           <button
             onClick={handleGenerateDiagram}
@@ -236,12 +247,12 @@ const ArchitectureDiagram = ({ workflowId }) => {
             {isGenerating ? (
               <>
                 <Loader className="h-4 w-4 mr-2 animate-spin" />
-                Generating...
+                Generating Professional Diagram...
               </>
             ) : (
               <>
                 <Layers className="h-4 w-4 mr-2" />
-                Generate Diagram
+                Generate Professional Diagram
               </>
             )}
           </button>
@@ -480,9 +491,9 @@ const ArchitectureDiagram = ({ workflowId }) => {
       {!diagramData && !isGenerating && !error && (
         <div className="p-8 text-center">
           <Layers className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No diagram generated yet</h3>
+          <h3 className="mt-2 text-sm font-medium text-gray-900">No professional diagram generated yet</h3>
           <p className="mt-1 text-sm text-gray-500">
-            Load your architecture analysis and generate a visual diagram with AWS components.
+            Load your architecture analysis and generate a professional AWS diagram with proper service shapes and enterprise-grade styling.
           </p>
         </div>
       )}

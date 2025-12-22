@@ -119,8 +119,29 @@ class RAGService {
       return await this.workflowDataService.answerQuestion(workflowId, question);
     }
 
-    // Fallback to active service
-    return await this.activeService.answerQuestion(question, workflowId);
+    // If activeService is 'workflow' but no workflowId, or if activeService is an object
+    if (this.activeService === 'workflow') {
+      // No workflowId provided, but we're in workflow mode - this shouldn't happen in normal flow
+      logger.warn('Workflow mode active but no workflowId provided for question');
+      return {
+        answer: "Please provide a workflow ID for this question.",
+        confidence: 0.0,
+        sources: []
+      };
+    }
+
+    // Use the actual service object
+    if (this.activeService && typeof this.activeService.answerQuestion === 'function') {
+      return await this.activeService.answerQuestion(question, workflowId);
+    }
+
+    // Fallback error
+    logger.error('No valid active service available for answering questions');
+    return {
+      answer: "No RAG service available to answer this question.",
+      confidence: 0.0,
+      sources: []
+    };
   }
 
   async clearCollection() {
